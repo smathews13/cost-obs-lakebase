@@ -16,15 +16,12 @@ from typing import Generator
 
 logger = logging.getLogger(__name__)
 
-_PGHOST = os.environ.get("PGHOST", "")
-_PGDATABASE = os.environ.get("PGDATABASE", "postgres")
-
 _pool = None  # psycopg_pool.ConnectionPool, lazy-initialized
 
 
 def is_available() -> bool:
     """Return True when a Lakebase endpoint is configured."""
-    return bool(_PGHOST)
+    return bool(os.environ.get("PGHOST"))
 
 
 def _make_conninfo() -> str:
@@ -34,10 +31,12 @@ def _make_conninfo() -> str:
     fresh and never stored at rest.
     """
     from databricks.sdk import WorkspaceClient
+    pghost = os.environ.get("PGHOST", "")
+    pgdatabase = os.environ.get("PGDATABASE", "postgres")
     token = WorkspaceClient().config.oauth_token().access_token
     return (
-        f"host={_PGHOST} "
-        f"dbname={_PGDATABASE} "
+        f"host={pghost} "
+        f"dbname={pgdatabase} "
         "user=token "
         f"password={token} "
         "sslmode=require "
@@ -48,9 +47,9 @@ def _make_conninfo() -> str:
 def _get_pool():
     global _pool
     if _pool is None:
-        if not _PGHOST:
+        if not os.environ.get("PGHOST"):
             raise RuntimeError(
-                "PGHOST is not set — Lakebase resource not bound or app.yaml not updated"
+                "PGHOST is not set — Lakebase resource not bound or provisioning failed"
             )
         from psycopg_pool import ConnectionPool
 

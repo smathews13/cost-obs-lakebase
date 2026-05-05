@@ -564,7 +564,14 @@ def startup_tasks():
     # Step 0c: Grant the active identity access to all required system tables
     setup_system_table_grants()
 
-    # Step 0d: Bootstrap Lakebase schema (idempotent — only runs when PGHOST is set)
+    # Step 0d: Auto-provision Lakebase (idempotent — fast on subsequent restarts)
+    try:
+        from db.provision_lakebase import provision as _lb_provision
+        _lb_provision()
+    except Exception as e:
+        logger.warning(f"Lakebase provisioning failed (non-fatal): {e}")
+
+    # Step 0e: Bootstrap Lakebase schema (idempotent — only runs when PGHOST is set)
     if os.environ.get("PGHOST"):
         try:
             from db.bootstrap_lakebase_schema import bootstrap as _lb_bootstrap
