@@ -680,6 +680,7 @@ async def get_auth_status_endpoint():
     import os as _os
     from server.db import get_auth_status, get_workspace_client
     status = get_auth_status()
+    status["lakebase_active"] = bool(_os.environ.get("PGHOST"))
     # Add SP identity and catalog/schema so the UI renders accurate GRANT SQL without placeholders
     try:
         me = get_workspace_client().current_user.me()
@@ -697,6 +698,35 @@ async def get_auth_status_endpoint():
         status["catalog"] = ""
         status["schema"] = ""
     return status
+
+
+@router.get("/lakebase")
+async def get_lakebase_status():
+    """Return Lakebase instance info and live connection test result."""
+    import os as _os
+    pghost = _os.environ.get("PGHOST", "")
+    pgdatabase = _os.environ.get("PGDATABASE", "postgres")
+
+    if not pghost:
+        return {"active": False, "host": None, "database": None, "connected": False, "error": None}
+
+    connected = False
+    error = None
+    try:
+        from server.lakebase import get_connection
+        with get_connection() as conn:
+            conn.execute("SELECT 1")
+        connected = True
+    except Exception as e:
+        error = str(e)[:300]
+
+    return {
+        "active": True,
+        "host": pghost,
+        "database": pgdatabase,
+        "connected": connected,
+        "error": error,
+    }
 
 
 @router.get("/billing-access")

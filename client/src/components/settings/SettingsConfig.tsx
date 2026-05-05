@@ -68,11 +68,26 @@ export function SettingsConfig({
     identity: "user_oauth" | "service_principal";
     locked_to_sp: boolean;
     has_sql_scope: boolean | null;
+    lakebase_active: boolean;
   } | null>({
     queryKey: ["settings-auth-status"],
     queryFn: () => fetch("/api/settings/auth-status").then(r => r.json()).catch(() => null),
     staleTime: 60 * 1000,
   });
+
+  const { data: lakebaseStatus = null, isLoading: lakebaseLoading, refetch: refetchLakebase } = useQuery<{
+    active: boolean;
+    host: string | null;
+    database: string | null;
+    connected: boolean;
+    error: string | null;
+  } | null>({
+    queryKey: ["settings-lakebase"],
+    queryFn: () => fetch("/api/settings/lakebase").then(r => r.json()).catch(() => null),
+    staleTime: 30 * 1000,
+    enabled: !!authStatus?.lakebase_active,
+  });
+  const [lakebasePinging, setLakebasePinging] = useState(false);
 
   const [catalogEditing, setCatalogEditing] = useState(false);
   const [catalogDraft, setCatalogDraft] = useState({ catalog: "", schema: "" });
@@ -417,14 +432,20 @@ export function SettingsConfig({
             </div>
           </div>
 
-          {/* Storage Location & Tables */}
+          {/* Storage */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
                 </svg>
-                <h4 className="text-sm font-semibold text-gray-900">Storage Location & Tables</h4>
+                <h4 className="text-sm font-semibold text-gray-900">Storage</h4>
+                {authStatus && (
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${authStatus.lakebase_active ? "bg-[#06B6D4]/10 text-[#0891B2] border border-[#06B6D4]/30" : "bg-gray-100 text-gray-500 border border-gray-200"}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${authStatus.lakebase_active ? "bg-[#06B6D4]" : "bg-gray-400"}`} />
+                    {authStatus.lakebase_active ? "OLTP · Lakebase" : "OLAP · Delta"}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 {/* Last refresh indicator */}
@@ -592,8 +613,65 @@ export function SettingsConfig({
               )}
             </div>
 
-            {/* Auth error banner */}
-            {tablesStatus?.auth_error && (
+            {/* Lakebase instance panel — shown when OLTP mode is active */}
+            {authStatus?.lakebase_active && (
+              <div className="mb-3 rounded-lg border border-[#06B6D4]/30 bg-[#06B6D4]/5 p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <svg className="h-4 w-4 text-[#0891B2]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+                    </svg>
+                    <span className="text-sm font-semibold text-[#0891B2]">Lakebase Instance</span>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      setLakebasePinging(true);
+                      try { await refetchLakebase(); } finally { setLakebasePinging(false); }
+                    }}
+                    disabled={lakebasePinging || lakebaseLoading}
+                    className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-[#0891B2] hover:bg-[#06B6D4]/10 transition-colors disabled:opacity-50"
+                    title="Test connection"
+                  >
+                    <svg className={`h-3.5 w-3.5 ${lakebasePinging || lakebaseLoading ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    {lakebasePinging || lakebaseLoading ? "Testing…" : "Test connection"}
+                  </button>
+                </div>
+
+                {lakebaseLoading ? (
+                  <div className="text-xs text-[#0891B2]/70">Loading instance info…</div>
+                ) : lakebaseStatus ? (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between rounded-md bg-white border border-[#06B6D4]/20 px-3 py-2">
+                      <span className="text-xs text-gray-500">Connection status</span>
+                      <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${lakebaseStatus.connected ? "text-green-700" : "text-red-600"}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${lakebaseStatus.connected ? "bg-green-500" : "bg-red-500"}`} />
+                        {lakebaseStatus.connected ? "Connected" : "Unreachable"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-md bg-white border border-[#06B6D4]/20 px-3 py-2">
+                      <span className="text-xs text-gray-500">Host</span>
+                      <span className="text-xs font-mono text-gray-700 truncate max-w-[280px]" title={lakebaseStatus.host ?? ""}>{lakebaseStatus.host ?? "—"}</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-md bg-white border border-[#06B6D4]/20 px-3 py-2">
+                      <span className="text-xs text-gray-500">Database</span>
+                      <span className="text-xs font-mono text-gray-700">{lakebaseStatus.database ?? "—"}</span>
+                    </div>
+                    {lakebaseStatus.error && (
+                      <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 wrap-break-word">
+                        {lakebaseStatus.error}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-xs text-red-600">Could not fetch instance info</div>
+                )}
+              </div>
+            )}
+
+            {/* Auth error banner — Delta mode only */}
+            {!authStatus?.lakebase_active && tablesStatus?.auth_error && (
               <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 flex gap-2 items-start">
                 <svg className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
@@ -602,8 +680,8 @@ export function SettingsConfig({
               </div>
             )}
 
-            {/* Table list */}
-            {tablesLoading ? (
+            {/* Table list — Delta mode only */}
+            {!authStatus?.lakebase_active && (tablesLoading ? (
               <div className="py-3 text-center text-xs text-gray-500">Checking tables...</div>
             ) : tablesStatus?.tables?.length ? (
               <div className="rounded-lg border border-gray-200 overflow-hidden">
@@ -691,7 +769,7 @@ export function SettingsConfig({
               </div>
             ) : (
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">Could not retrieve table status</div>
-            )}
+            ))}
           </div>
 
           {/* App Telemetry */}

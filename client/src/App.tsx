@@ -295,6 +295,7 @@ function Dashboard() {
     identity: "user_oauth" | "service_principal";
     locked_to_sp: boolean;
     has_sql_scope: boolean | null;
+    lakebase_active: boolean;
   } | null>({
     queryKey: ["settings-auth-status"],
     queryFn: () => fetch("/api/settings/auth-status").then(r => r.json()).catch(() => null),
@@ -567,6 +568,15 @@ function Dashboard() {
                     >
                       <span className={`h-1.5 w-1.5 rounded-full ${authStatus.identity === "user_oauth" ? "bg-green-400" : "bg-amber-400"}`} />
                       {authStatus.identity === "user_oauth" ? "OAuth" : "SP"}
+                    </span>
+                  )}
+                  {authStatus && (
+                    <span
+                      title={authStatus.lakebase_active ? "Materialized results stored in Lakebase (PostgreSQL)" : "Queries run directly against Delta tables via SQL Warehouse"}
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${authStatus.lakebase_active ? "bg-[#06B6D4]/20 text-[#67E8F9]" : "bg-white/10 text-white/60"}`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${authStatus.lakebase_active ? "bg-[#06B6D4]" : "bg-white/40"}`} />
+                      {authStatus.lakebase_active ? "OLTP" : "OLAP"}
                     </span>
                   )}
                 </div>
