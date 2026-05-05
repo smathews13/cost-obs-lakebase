@@ -7,6 +7,7 @@ LROs only block on first deploy when resources don't exist yet.
 On success, sets os.environ["PGHOST"] so the connection pool and bootstrap
 can open. On any failure, logs a warning and leaves the app in OLAP mode.
 """
+import datetime
 import logging
 import os
 
@@ -41,9 +42,12 @@ def provision() -> bool:
             Branch, BranchSpec, Endpoint, EndpointSpec, EndpointType,
             Project, ProjectSpec,
         )
+        from databricks.sdk.service import lro as _lro
     except ImportError:
         logger.warning("databricks-sdk not available — cannot auto-provision Lakebase")
         return False
+
+    _LRO_OPTS = _lro.LroOptions(timeout=datetime.timedelta(minutes=10))
 
     try:
         client = WorkspaceClient()
@@ -61,7 +65,7 @@ def provision() -> bool:
                     pg_version=17,
                 )),
                 project_id=_PROJECT_ID,
-            ).wait()
+            ).wait(opts=_LRO_OPTS)
             logger.info("Lakebase project created: %s", project.name)
 
         # ── Branch ───────────────────────────────────────────────────────────
@@ -74,7 +78,7 @@ def provision() -> bool:
                 parent=_project_name(),
                 branch=Branch(spec=BranchSpec(no_expiry=True)),
                 branch_id=_BRANCH_ID,
-            ).wait()
+            ).wait(opts=_LRO_OPTS)
             logger.info("Lakebase branch created: %s", branch.name)
 
         # ── Endpoint ─────────────────────────────────────────────────────────
@@ -91,7 +95,7 @@ def provision() -> bool:
                     autoscaling_limit_max_cu=4,
                 )),
                 endpoint_id=_ENDPOINT_ID,
-            ).wait()
+            ).wait(opts=_LRO_OPTS)
             logger.info("Lakebase endpoint created: %s", endpoint.name)
 
         # ── Extract host ──────────────────────────────────────────────────────
