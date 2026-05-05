@@ -12,27 +12,21 @@ resources:
   postgres_projects:
     cost_obs_lb_project:
       project_id: cost-obs-lakebase
-      spec:
-        display_name: "Cost Observability Lakebase"
-        pg_version: 17
+      display_name: "Cost Observability Lakebase"
+      pg_version: 17
 
   postgres_branches:
     cost_obs_lb_prod_branch:
-      name: projects/cost-obs-lakebase/branches/production
-      parent: projects/cost-obs-lakebase
-      spec:
-        display_name: "production"
+      parent: ${resources.postgres_projects.cost_obs_lb_project.id}
+      branch_id: production
 
   postgres_endpoints:
     cost_obs_lb_prod_rw:
-      name: projects/cost-obs-lakebase/branches/production/endpoints/prod-rw
-      parent: projects/cost-obs-lakebase/branches/production
-      spec:
-        type: ENDPOINT_TYPE_READ_WRITE
-        autoscaling:
-          autoscaling_limit_min_cu: 1
-          autoscaling_limit_max_cu: 4
-        scale_to_zero_enabled: true
+      parent: ${resources.postgres_branches.cost_obs_lb_prod_branch.id}
+      endpoint_id: prod-rw
+      endpoint_type: ENDPOINT_TYPE_READ_WRITE
+      autoscaling_limit_min_cu: 1
+      autoscaling_limit_max_cu: 4
 
 # =============================================================================
 # Databricks App — deployed from Git, bound to Lakebase + SQL Warehouse
@@ -46,14 +40,12 @@ resources:
         - name: lakebase-db
           description: "Lakebase RW endpoint for materialized query results"
           postgres:
-            permission: MANAGER
-            endpoint_name: ${resources.postgres_endpoints.cost_obs_lb_prod_rw.name}
-        - name: sql-warehouse
-          description: "SQL Warehouse for Databricks system table queries"
-          sql_warehouse:
-            permission: CAN_USE
+            branch: ${resources.postgres_branches.cost_obs_lb_prod_branch.id}
+            permission: CAN_CONNECT_AND_CREATE
+
+      git_repository:
+        url: https://github.com/smathews13/cost-obs-lakebase
+        provider: gitHub
 
       git_source:
-        git_url: https://github.com/sam-mathews_data/cost-obs-lakebase
-        git_provider: GITHUB
-        git_branch: main
+        branch: main
