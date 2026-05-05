@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/dbfavicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&display=swap" rel="stylesheet" />
+    <title>COST-OBS</title>
+    <style>
+      /* Unique keyframe names to avoid collision with Tailwind v4's layered @keyframes */
+      @keyframes co-spin { to { transform: rotate(360deg); } }
+      @keyframes co-pulse { 50% { opacity: .5; } }
+      @keyframes co-bounce {
+        0%, 100% { transform: translateY(-25%); animation-timing-function: cubic-bezier(0.8,0,1,1); }
+        50% { transform: none; animation-timing-function: cubic-bezier(0,0,0.2,1); }
+      }
+      .animate-spin  { animation: co-spin 1s linear infinite !important; }
+      .animate-pulse { animation: co-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite !important; }
+      .animate-bounce { animation: co-bounce 1s infinite !important; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

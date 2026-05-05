@@ -1,0 +1,59 @@
+bundle:
+  name: cost-obs-lakebase
+
+targets:
+  prod:
+    mode: production
+
+# =============================================================================
+# Lakebase Autoscaling resources
+# =============================================================================
+resources:
+  postgres_projects:
+    cost_obs_lb_project:
+      project_id: cost-obs-lakebase
+      spec:
+        display_name: "Cost Observability Lakebase"
+        pg_version: 17
+
+  postgres_branches:
+    cost_obs_lb_prod_branch:
+      name: projects/cost-obs-lakebase/branches/production
+      parent: projects/cost-obs-lakebase
+      spec:
+        display_name: "production"
+
+  postgres_endpoints:
+    cost_obs_lb_prod_rw:
+      name: projects/cost-obs-lakebase/branches/production/endpoints/prod-rw
+      parent: projects/cost-obs-lakebase/branches/production
+      spec:
+        type: ENDPOINT_TYPE_READ_WRITE
+        autoscaling:
+          autoscaling_limit_min_cu: 1
+          autoscaling_limit_max_cu: 4
+        scale_to_zero_enabled: true
+
+# =============================================================================
+# Databricks App — deployed from Git, bound to Lakebase + SQL Warehouse
+# =============================================================================
+  apps:
+    cost_obs_app:
+      name: cost-obs
+      description: "Cost Observability & Control with Lakebase"
+
+      resources:
+        - name: lakebase-db
+          description: "Lakebase RW endpoint for materialized query results"
+          postgres:
+            permission: MANAGER
+            endpoint_name: ${resources.postgres_endpoints.cost_obs_lb_prod_rw.name}
+        - name: sql-warehouse
+          description: "SQL Warehouse for Databricks system table queries"
+          sql_warehouse:
+            permission: CAN_USE
+
+      git_source:
+        git_url: https://github.com/sam-mathews_data/cost-obs-lakebase
+        git_provider: GITHUB
+        git_branch: main

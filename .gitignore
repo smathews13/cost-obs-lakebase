@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.uv/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+client/node_modules/
+client/dist/
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.*
+
+# Deployment variant overrides (workspace-specific — configure via Databricks Apps UI)
+app.*.yaml
+
+# App settings (contains secrets)
+.settings/
+
+# Databricks local state
+.databricks/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Build artifacts
+
+# Logs
+*.log
+/tmp/
+
+# PID files
+*.pid
+
+# Deploy script temp files
+*.deploy-bak

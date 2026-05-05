@@ -1,0 +1,529 @@
+@import "tailwindcss";
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+  --primary: 222.2 47.4% 11.2%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 222.2 84% 4.9%;
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  --card: 222.2 84% 4.9%;
+  --card-foreground: 210 40% 98%;
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 210 40% 98%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+  --accent: 217.2 32.6% 17.5%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --ring: 212.7 26.8% 83.9%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  margin: 0;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+}
+
+/* ── Animations ────────────────────────────────────────── */
+
+/* NOTE: animate-spin, animate-pulse, animate-bounce overrides are in
+   public/animations.css (loaded via index.html <link>) so they stay
+   outside Tailwind v4's @layer system. Putting them here doesn't work
+   because @import "tailwindcss" absorbs everything into @layer utilities. */
+
+/* Fade-in for tab content, loaded data, etc. */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out both;
+}
+
+/* Modal backdrop fade */
+@keyframes backdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-backdrop {
+  animation: backdropIn 0.15s ease-out both;
+}
+
+/* Modal dialog scale + fade */
+@keyframes dialogIn {
+  from { opacity: 0; transform: scale(0.97) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.animate-dialog {
+  animation: dialogIn 0.2s ease-out both;
+}
+
+/* Slide-down for expandable panels */
+@keyframes slideDown {
+  from { opacity: 0; max-height: 0; }
+  to   { opacity: 1; max-height: 2000px; }
+}
+.animate-slide-down {
+  animation: slideDown 0.25s ease-out both;
+  overflow: hidden;
+}
+
+/* Brand-colored button with hover */
+.btn-brand {
+  background-color: #FF3621;
+  color: white;
+  transition: background-color 0.15s ease;
+}
+.btn-brand:hover {
+  background-color: #E02F1C;
+}
+.btn-brand:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px white, 0 0 0 4px #FF3621;
+}
+
+/* Hidden scrollbar for horizontal tab overflow */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Respect user motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-backdrop,
+  .animate-dialog,
+  .animate-slide-down {
+    animation: none !important;
+  }
+}
+
+/* Compact mode - reduce spacing for denser data display */
+.compact-mode .space-y-6 > * + * {
+  margin-top: 0.75rem;
+}
+.compact-mode .space-y-4 > * + * {
+  margin-top: 0.5rem;
+}
+.compact-mode .py-6 {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+.compact-mode .py-4 {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+.compact-mode .px-6 {
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+.compact-mode .text-2xl {
+  font-size: 1.25rem;
+}
+.compact-mode .gap-6 {
+  gap: 0.75rem;
+}
+.compact-mode .gap-4 {
+  gap: 0.5rem;
+}
+
+/* ── Dark Mode ──────────────────────────────────────────
+   Databricks-inspired dark palette.
+   Activated by adding .dark-mode to <html>.
+   ────────────────────────────────────────────────────── */
+
+/* CSS custom properties for dark mode */
+.dark-mode {
+  --dm-bg: #1B1F23;
+  --dm-surface: #2C2F33;
+  --dm-surface-raised: #3A3D41;
+  --dm-border: #4A4D52;
+  --dm-text: #EEEEEE;
+  --dm-text-secondary: #A1A7B3;
+  --dm-text-muted: #6B7280;
+  --dm-accent: #FF3621;
+  --dm-accent-hover: #FF6A4D;
+  --dm-link: #4A9FD8;
+  --dm-success: #2EA44F;
+  --dm-warning: #D29922;
+  --dm-error: #CF222E;
+  --border: 220 13% 20%;
+  color-scheme: dark;
+}
+
+/* ── Global overrides ── */
+.dark-mode body {
+  background-color: var(--dm-bg) !important;
+  color: var(--dm-text) !important;
+}
+
+/* Page-level background (the min-h-screen wrapper in App.tsx uses inline style) */
+.dark-mode .min-h-screen {
+  background-color: var(--dm-bg) !important;
+}
+
+/* ── Cards, panels, white backgrounds ── */
+.dark-mode .bg-white {
+  background-color: var(--dm-surface) !important;
+}
+.dark-mode .bg-gray-50 {
+  background-color: var(--dm-surface) !important;
+}
+.dark-mode .bg-gray-100 {
+  background-color: var(--dm-surface-raised) !important;
+}
+
+/* ── Borders ── */
+.dark-mode .border-gray-100,
+.dark-mode .border-gray-200:not([class*="animate-spin"]),
+.dark-mode .border-gray-300:not([class*="animate-spin"]) {
+  border-color: var(--dm-border) !important;
+}
+.dark-mode [style*="border-color: rgb(229, 229, 229)"],
+.dark-mode [style*="borderColor"]:not([class*="animate-spin"]) {
+  border-color: var(--dm-border) !important;
+}
+
+/* ── Text colors ── */
+.dark-mode .text-gray-900,
+.dark-mode .text-gray-800 {
+  color: var(--dm-text) !important;
+}
+.dark-mode .text-gray-700,
+.dark-mode .text-gray-600 {
+  color: var(--dm-text-secondary) !important;
+}
+.dark-mode .text-gray-500,
+.dark-mode .text-gray-400 {
+  color: var(--dm-text-muted) !important;
+}
+
+/* ── Header bar ── */
+.dark-mode [style*="background-color: rgb(27, 49, 57)"],
+.dark-mode [style*="backgroundColor"] {
+  /* Keep the dark header, just darken slightly */
+}
+
+/* ── Inputs and selects ── */
+.dark-mode input,
+.dark-mode select,
+.dark-mode textarea {
+  background-color: var(--dm-surface-raised) !important;
+  color: var(--dm-text) !important;
+  border-color: var(--dm-border) !important;
+}
+.dark-mode input::placeholder,
+.dark-mode textarea::placeholder {
+  color: var(--dm-text-muted) !important;
+}
+
+/* ── Tables ── */
+.dark-mode table {
+  color: var(--dm-text);
+}
+.dark-mode thead {
+  background-color: var(--dm-surface-raised) !important;
+}
+.dark-mode th {
+  color: var(--dm-text-secondary) !important;
+  border-color: var(--dm-border) !important;
+}
+.dark-mode td {
+  border-color: var(--dm-border) !important;
+}
+.dark-mode tbody tr:hover {
+  background-color: var(--dm-surface-raised) !important;
+}
+.dark-mode .hover\:bg-gray-50:hover {
+  background-color: var(--dm-surface-raised) !important;
+}
+.dark-mode .even\:bg-gray-50:nth-child(even) {
+  background-color: rgba(58, 61, 65, 0.5) !important;
+}
+
+/* ── Shadow adjustments (softer in dark mode) ── */
+.dark-mode .shadow,
+.dark-mode .shadow-sm,
+.dark-mode .shadow-md,
+.dark-mode .shadow-lg {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ── Modals / dialogs ── */
+.dark-mode .bg-black\/50 {
+  background-color: rgba(0, 0, 0, 0.7) !important;
+}
+
+/* ── Scrollbar (webkit) ── */
+.dark-mode ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.dark-mode ::-webkit-scrollbar-track {
+  background: var(--dm-bg);
+}
+.dark-mode ::-webkit-scrollbar-thumb {
+  background: var(--dm-border);
+  border-radius: 4px;
+}
+.dark-mode ::-webkit-scrollbar-thumb:hover {
+  background: var(--dm-text-muted);
+}
+
+/* ── Colored backgrounds (info/warning/success banners) ── */
+.dark-mode .bg-green-50 {
+  background-color: rgba(46, 164, 79, 0.15) !important;
+}
+.dark-mode .bg-green-100 {
+  background-color: rgba(46, 164, 79, 0.2) !important;
+}
+.dark-mode .bg-red-50 {
+  background-color: rgba(207, 34, 46, 0.15) !important;
+}
+.dark-mode .bg-red-100 {
+  background-color: rgba(207, 34, 46, 0.2) !important;
+}
+.dark-mode .bg-yellow-50,
+.dark-mode .bg-amber-50 {
+  background-color: rgba(210, 153, 34, 0.15) !important;
+}
+.dark-mode .bg-amber-100 {
+  background-color: rgba(210, 153, 34, 0.2) !important;
+}
+.dark-mode .bg-blue-50 {
+  background-color: rgba(74, 159, 216, 0.15) !important;
+}
+.dark-mode .bg-blue-100 {
+  background-color: rgba(74, 159, 216, 0.2) !important;
+}
+.dark-mode .bg-orange-50 {
+  background-color: rgba(255, 54, 33, 0.1) !important;
+}
+.dark-mode .bg-orange-100 {
+  background-color: rgba(255, 54, 33, 0.15) !important;
+}
+.dark-mode .bg-purple-50 {
+  background-color: rgba(163, 113, 247, 0.15) !important;
+}
+.dark-mode .bg-purple-100 {
+  background-color: rgba(163, 113, 247, 0.2) !important;
+}
+
+/* Colored borders for banners */
+.dark-mode .border-green-200 { border-color: rgba(46, 164, 79, 0.3) !important; }
+.dark-mode .border-red-200 { border-color: rgba(207, 34, 46, 0.3) !important; }
+.dark-mode .border-yellow-200,
+.dark-mode .border-amber-200 { border-color: rgba(210, 153, 34, 0.3) !important; }
+.dark-mode .border-blue-200 { border-color: rgba(74, 159, 216, 0.3) !important; }
+.dark-mode .border-orange-200 { border-color: rgba(255, 54, 33, 0.2) !important; }
+
+/* ── Progress bars / percentage bars ── */
+.dark-mode .bg-gray-200 {
+  background-color: var(--dm-surface-raised) !important;
+}
+.dark-mode .bg-gray-300 {
+  background-color: var(--dm-border) !important;
+}
+
+/* ── Tab navigation borders ── */
+.dark-mode .border-b-2.border-transparent {
+  border-color: transparent !important;
+}
+.dark-mode .hover\:border-gray-300:hover {
+  border-color: var(--dm-text-muted) !important;
+}
+
+/* ── Hover effects on interactive surfaces ── */
+.dark-mode .hover\:bg-gray-100:hover {
+  background-color: var(--dm-surface-raised) !important;
+}
+.dark-mode .hover\:shadow-md:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* ── Pulse / skeleton loaders ── */
+.dark-mode .animate-pulse {
+  background-color: var(--dm-surface-raised) !important;
+}
+.dark-mode .bg-gray-200.animate-pulse,
+.dark-mode .animate-pulse .bg-gray-200 {
+  background-color: var(--dm-border) !important;
+}
+
+/* ── Recharts (SVG charts) ── */
+.dark-mode .recharts-cartesian-grid line {
+  stroke: var(--dm-border) !important;
+}
+.dark-mode .recharts-cartesian-axis-tick-value {
+  fill: var(--dm-text-muted) !important;
+}
+.dark-mode .recharts-default-tooltip {
+  background-color: var(--dm-surface) !important;
+  border-color: var(--dm-border) !important;
+  color: var(--dm-text) !important;
+}
+.dark-mode .recharts-tooltip-label {
+  color: var(--dm-text) !important;
+}
+.dark-mode .recharts-legend-item-text {
+  color: var(--dm-text-secondary) !important;
+}
+
+/* ── Spinner border (only override the base border, not borderTopColor) ── */
+.dark-mode .border-gray-300[class*="animate-spin"] {
+  border-right-color: var(--dm-border) !important;
+  border-bottom-color: var(--dm-border) !important;
+  border-left-color: var(--dm-border) !important;
+}
+
+/* ── Divide colors ── */
+.dark-mode .divide-gray-200 > * + * {
+  border-color: var(--dm-border) !important;
+}
+
+/* ── Ring colors (focus states) ── */
+.dark-mode .ring-gray-400,
+.dark-mode .focus\:ring-gray-400:focus {
+  --tw-ring-color: var(--dm-border) !important;
+}
+
+/* ── Inline style overrides for the app background ── */
+.dark-mode [style*="background-color: rgb(249, 247, 244)"] {
+  background-color: var(--dm-bg) !important;
+}
+.dark-mode [style*="backgroundColor: rgb(249, 247, 244)"] {
+  background-color: var(--dm-bg) !important;
+}
+
+/* Settings dialog header active section highlight */
+.dark-mode [style*="background-color: rgb(255, 243, 240)"] {
+  background-color: rgba(255, 54, 33, 0.15) !important;
+}
+
+/* ── Override inline border colors ──
+   Many components use style={{ borderColor: '#E5E5E5' }}.
+   Exclude spinners (they use borderTopColor for the visible arc). */
+.dark-mode [style*="border-color"]:not([class*="animate-spin"]),
+.dark-mode [style*="borderColor"]:not([class*="animate-spin"]) {
+  border-color: var(--dm-border) !important;
+}
+
+/* Override inline hover backgrounds set via JS event handlers */
+.dark-mode [style*="background-color: rgb(249, 247, 244)"] {
+  background-color: var(--dm-surface-raised) !important;
+}
+
+/* ── Colored text (badges, banners, status indicators) ──
+   Map dark shades to lighter equivalents so they remain readable
+   on the dark tinted badge/banner backgrounds.                  */
+.dark-mode .text-green-700,
+.dark-mode .text-green-800 { color: #6ee7b7 !important; }
+.dark-mode .text-green-600,
+.dark-mode .text-green-500 { color: #34d399 !important; }
+.dark-mode .text-emerald-800,
+.dark-mode .text-emerald-600 { color: #6ee7b7 !important; }
+
+.dark-mode .text-blue-700,
+.dark-mode .text-blue-800 { color: #93c5fd !important; }
+.dark-mode .text-blue-600,
+.dark-mode .text-blue-500 { color: #60a5fa !important; }
+.dark-mode .text-blue-400,
+.dark-mode .text-blue-300,
+.dark-mode .text-blue-200 { color: #bfdbfe !important; }
+
+.dark-mode .text-amber-700,
+.dark-mode .text-amber-800,
+.dark-mode .text-amber-900 { color: #fcd34d !important; }
+.dark-mode .text-amber-600,
+.dark-mode .text-amber-500 { color: #f59e0b !important; }
+
+.dark-mode .text-orange-700,
+.dark-mode .text-orange-800,
+.dark-mode .text-orange-900 { color: #fdba74 !important; }
+.dark-mode .text-orange-600,
+.dark-mode .text-orange-500 { color: #fb923c !important; }
+.dark-mode .text-orange-400,
+.dark-mode .text-orange-300 { color: #fed7aa !important; }
+
+.dark-mode .text-purple-700,
+.dark-mode .text-purple-800,
+.dark-mode .text-purple-900 { color: #c4b5fd !important; }
+.dark-mode .text-purple-600 { color: #a78bfa !important; }
+
+.dark-mode .text-red-700,
+.dark-mode .text-red-800 { color: #fca5a5 !important; }
+.dark-mode .text-red-600,
+.dark-mode .text-red-500 { color: #f87171 !important; }
+.dark-mode .text-red-400 { color: #fca5a5 !important; }
+
+/* ── Missing border colors ── */
+.dark-mode .border-purple-200,
+.dark-mode .border-purple-300 { border-color: rgba(163, 113, 247, 0.3) !important; }
+.dark-mode .border-emerald-200 { border-color: rgba(52, 211, 153, 0.3) !important; }
+
+/* ── Modal overlay opacity variants (bg-black/30, bg-black/40) ── */
+.dark-mode .bg-black\/30 { background-color: rgba(0, 0, 0, 0.5) !important; }
+.dark-mode .bg-black\/40 { background-color: rgba(0, 0, 0, 0.65) !important; }
+
+/* ── Inline style backgrounds not yet covered ── */
+/* Cream/light-orange rows (#FFF7ED) */
+.dark-mode [style*="background-color: rgb(255, 247, 237)"],
+.dark-mode [style*="backgroundColor: rgb(255, 247, 237)"] {
+  background-color: var(--dm-surface-raised) !important;
+}
+/* Inline skeleton/divider grays */
+.dark-mode [style*="background-color: rgb(229, 229, 229)"],
+.dark-mode [style*="backgroundColor: rgb(229, 229, 229)"] {
+  background-color: var(--dm-border) !important;
+}
+
+/* ── Code inline elements ── */
+.dark-mode code {
+  background-color: var(--dm-surface-raised) !important;
+  color: var(--dm-text) !important;
+  border-color: var(--dm-border);
+}
+
+/* ── Additional bg colors for code blocks / info chips ── */
+.dark-mode .bg-green-200 { background-color: rgba(46, 164, 79, 0.25) !important; }
+.dark-mode .bg-blue-200  { background-color: rgba(74, 159, 216, 0.25) !important; }
+.dark-mode .bg-amber-200 { background-color: rgba(210, 153, 34, 0.25) !important; }
+.dark-mode .bg-purple-200 { background-color: rgba(163, 113, 247, 0.25) !important; }
+.dark-mode .bg-red-50    { background-color: rgba(207, 34, 46, 0.15) !important; }
+.dark-mode .bg-red-200   { background-color: rgba(207, 34, 46, 0.25) !important; }

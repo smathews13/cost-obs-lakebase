@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" rx="6" fill="#FF3621"/>
+  <g transform="translate(4, 4)" fill="white">
+    <!-- Databricks spark/diamond logo -->
+    <polygon points="12,0 24,6 24,10 12,16 0,10 0,6"/>
+    <polygon points="12,8 24,14 24,18 12,24 0,18 0,14"/>
+  </g>
+</svg>

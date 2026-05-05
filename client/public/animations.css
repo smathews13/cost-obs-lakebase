@@ -1,0 +1,24 @@
+/* Animation overrides — unique keyframe names (co-*) avoid collision
+   with Tailwind v4's layered @keyframes definitions. Loaded via inline
+   <style> in index.html and also kept here as a fallback. */
+
+@keyframes co-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes co-pulse {
+  50% { opacity: .5; }
+}
+@keyframes co-bounce {
+  0%, 100% { transform: translateY(-25%); animation-timing-function: cubic-bezier(0.8,0,1,1); }
+  50% { transform: none; animation-timing-function: cubic-bezier(0,0,0.2,1); }
+}
+
+.animate-spin {
+  animation: co-spin 1s linear infinite !important;
+}
+.animate-pulse {
+  animation: co-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite !important;
+}
+.animate-bounce {
+  animation: co-bounce 1s infinite !important;
+}

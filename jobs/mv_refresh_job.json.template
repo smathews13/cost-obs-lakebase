@@ -1,0 +1,25 @@
+{
+  "name": "cost-obs-mv-refresh",
+  "schedule": {
+    "quartz_cron_expression": "0 0 2 * * ?",
+    "timezone_id": "UTC",
+    "pause_status": "UNPAUSED"
+  },
+  "tasks": [
+    {
+      "task_key": "refresh_mvs",
+      "notebook_task": {
+        "notebook_path": "/Workspace/Users/<YOUR_USER>/apps/<YOUR_APP_NAME>/notebooks/refresh_mvs",
+        "source": "WORKSPACE",
+        "base_parameters": {
+          "COST_OBS_CATALOG": "main",
+          "COST_OBS_SCHEMA": "cost_obs"
+        }
+      }
+    }
+  ],
+  "tags": {
+    "app": "cost-obs",
+    "managed-by": "manual"
+  }
+}

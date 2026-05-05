@@ -1,0 +1,60 @@
+command: ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# =============================================================================
+# Setup: configure in the Databricks Apps UI before deploying
+# =============================================================================
+#
+# 1. App resources → + Add resource → SQL warehouse
+#    Pick your existing Serverless Pro warehouse, set permission to "Can use",
+#    leave the resource key as "sql-warehouse".
+#    The app reads DATABRICKS_WAREHOUSE_ID (injected automatically) to connect.
+#
+# 2. User authorization → + Add scope → sql   (optional but recommended)
+#    Allows the app to run queries as the logged-in user rather than the SP.
+#    Workspace admins get system table access automatically — no GRANT needed.
+#    Users will see a one-time consent prompt on first open.
+#
+# =============================================================================
+
+resources:
+  - name: sql-warehouse
+    description: SQL Warehouse for cost observability queries
+    sql_warehouse:
+      permission: CAN_USE
+
+env:
+  # Injected automatically by Databricks Apps from the sql-warehouse resource above.
+  # Do not set this manually if you configured a warehouse resource in the UI.
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+
+  # Unity Catalog location for materialized views (defaults: main / cost_obs)
+  - name: COST_OBS_CATALOG
+    value: main
+  - name: COST_OBS_SCHEMA
+    value: cost_obs
+
+  # Optional: uncomment to point at a specific warehouse instead of the resource above
+  # - name: DATABRICKS_HTTP_PATH
+  #   value: /sql/1.0/warehouses/<id>
+
+  # Genie Space for AI cost queries (optional)
+  # - name: GENIE_SPACE_ID
+  #   value: <genie-space-id>
+
+  # Azure subscription ID (shown in account banner on Azure workspaces)
+  # - name: AZURE_SUBSCRIPTION_ID
+  #   value: <subscription-id>
+
+  # Lakebase — injected by databricks.yml bundle when Lakebase is provisioned.
+  # Not set here; if bundle provisioning fails the app falls back to Delta tables.
+
+  # AWS / Azure actual cost tables (defaults: billing.aws / billing.azure)
+  # - name: AWS_COST_CATALOG
+  #   value: billing
+  # - name: AWS_COST_SCHEMA
+  #   value: aws
+  # - name: AZURE_COST_CATALOG
+  #   value: billing
+  # - name: AZURE_COST_SCHEMA
+  #   value: azure
