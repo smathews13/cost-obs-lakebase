@@ -79,7 +79,7 @@ export function SettingsConfig({
     active: boolean;
     host: string | null;
     database: string | null;
-    connected: boolean;
+    connected: boolean | null;
     error: string | null;
     provision_log: {
       stage: string;
@@ -715,9 +715,9 @@ export function SettingsConfig({
                     <div className="space-y-1.5 pt-1 border-t border-[#06B6D4]/20">
                       <div className="flex items-center justify-between rounded-md bg-white border border-[#06B6D4]/20 px-3 py-2">
                         <span className="text-xs text-gray-500">Connection</span>
-                        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${lakebaseStatus?.connected ? "text-green-700" : "text-red-600"}`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${lakebaseStatus?.connected ? "bg-green-500" : "bg-red-500"}`} />
-                          {lakebaseStatus?.connected ? "Connected" : "Unreachable"}
+                        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${lakebaseStatus?.connected === true ? "text-green-700" : lakebaseStatus?.connected === false ? "text-red-600" : "text-gray-500"}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${lakebaseStatus?.connected === true ? "bg-green-500" : lakebaseStatus?.connected === false ? "bg-red-500" : "bg-gray-400"}`} />
+                          {lakebaseStatus?.connected === true ? "Connected" : lakebaseStatus?.connected === false ? "Unreachable" : "Not tested"}
                         </span>
                       </div>
                       <div className="flex items-center justify-between rounded-md bg-white border border-[#06B6D4]/20 px-3 py-2">

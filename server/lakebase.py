@@ -38,6 +38,7 @@ def _make_conninfo() -> str:
     if not token:
         from databricks.sdk import WorkspaceClient
         token = WorkspaceClient().config.oauth_token().access_token
+    logger.debug("Lakebase conninfo: host=%s db=%s user=token token_len=%d", pghost, pgdatabase, len(token))
     return (
         f"host={pghost} "
         f"dbname={pgdatabase} "
@@ -58,16 +59,18 @@ def _get_pool():
         from psycopg_pool import ConnectionPool
 
         def _on_reconnect_failed(pool) -> None:
-            logger.error("Lakebase pool failed to reconnect; continuing on SQL warehouse fallback")
+            logger.error("Lakebase pool reconnect failed — pool exhausted, falling back to SQL warehouse")
 
         _pool = ConnectionPool(
             _make_conninfo,
             min_size=1,
             max_size=8,
-            open=True,
+            open=False,  # don't block startup — open lazily on first use
             reconnect_failed=_on_reconnect_failed,
         )
-        logger.info("Lakebase connection pool opened (host=%s db=%s)", os.environ.get("PGHOST"), os.environ.get("PGDATABASE", "postgres"))
+        _pool.open(wait=False)  # background open: connect attempts happen async, won't block
+        logger.info("Lakebase connection pool opened in background (host=%s db=%s)",
+                    os.environ.get("PGHOST"), os.environ.get("PGDATABASE", "postgres"))
     return _pool
 
 
@@ -75,8 +78,12 @@ def _get_pool():
 def get_connection() -> Generator:
     """Context manager that yields a psycopg Connection from the pool."""
     pool = _get_pool()
-    with pool.connection() as conn:
-        yield conn
+    try:
+        with pool.connection(timeout=10) as conn:
+            yield conn
+    except Exception as e:
+        logger.error("Lakebase get_connection failed: %s", e)
+        raise
 
 
 def close_pool() -> None:
