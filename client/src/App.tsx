@@ -155,8 +155,7 @@ function Dashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [tabVisibility, setTabVisibility] = useState<TabVisibility>(loadTabVisibility);
   // "pending" = checking server, "initializing" = auto-creating MVs, true = wizard, false = dashboard
-  // Always start "pending" so the server is consulted on every load — localStorage alone is not
-  // sufficient because the schema/data may have been deleted since the last setup completion.
+  // Always start "pending" — server is consulted on every load to handle deleted schemas/data.
   const [showSetupWizard, setShowSetupWizard] = useState<boolean | "pending" | "initializing">(
     new URLSearchParams(window.location.search).get("setup") === "true" ? true : "pending"
   );
@@ -188,10 +187,14 @@ function Dashboard() {
     }
   };
 
-  // Auto-launch setup wizard on first deploy if tables/Lakebase aren't ready yet.
-  // Always check server status — localStorage is cleared if setup_required so that
-  // deleting tables/schema on a deployed app re-triggers the wizard.
-  // If the server returns "initializing", show a spinner and poll until ready.
+  // Determine on mount whether the user has ever completed setup in this browser.
+  // This controls whether "initializing" (server auto-bootstrap) can skip the wizard.
+  const _setupCompletedBefore = localStorage.getItem("coc-setup-complete") === "true";
+
+  // Always check server status on load. On setup_required, clear localStorage so
+  // deleting tables/schema re-triggers the wizard. The "initializing" (auto-bootstrap)
+  // path only bypasses the wizard if setup was already completed — on a fresh deploy
+  // the user must go through the wizard to choose storage mode.
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("setup") === "true") return;
     fetch("/api/setup/status")
@@ -200,14 +203,19 @@ function Dashboard() {
         if (status?.status === "setup_required") {
           localStorage.removeItem("coc-setup-complete");
           setShowSetupWizard(true);
-        } else if (status?.status === "initializing") {
+        } else if (status?.status === "initializing" && _setupCompletedBefore) {
+          // Tables dropped after a completed setup — auto-bootstrap, no wizard needed
           setShowSetupWizard("initializing");
+        } else if (status?.status === "initializing" && !_setupCompletedBefore) {
+          // Fresh deploy — server is auto-bootstrapping but user hasn't chosen storage
+          // mode yet; show the wizard so they can configure the app properly
+          setShowSetupWizard(true);
         } else {
           setShowSetupWizard(false);
         }
       })
       .catch(() => { setShowSetupWizard(false); });
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll while auto-initializing (server is building MVs in background)
   useEffect(() => {
