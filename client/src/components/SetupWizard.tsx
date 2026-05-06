@@ -563,9 +563,10 @@ function LakebaseProvisionStep({
   const stages: { key: string; label: string; description: string }[] = [
     { key: "provisioning", label: "Provision Lakebase resources", description: "Creating project, branch, and autoscaling endpoint" },
     { key: "bootstrapping", label: "Bootstrap Postgres schema", description: "Creating cost_obs schema and tables" },
+    { key: "populating", label: "Load initial data", description: "Populating tables from billing and query history" },
   ];
 
-  const stageIndex = provisionDone ? 2 : provisionStage === "bootstrapping" ? 1 : 0;
+  const stageIndex = provisionDone ? 3 : provisionStage === "populating" ? 2 : provisionStage === "bootstrapping" ? 1 : 0;
 
   if (provisionError) {
     return (
@@ -599,7 +600,7 @@ function LakebaseProvisionStep({
             </div>
           ))}
         </div>
-        <p className="text-xs text-gray-500">Click <strong>Next</strong> to continue with permissions setup.</p>
+        <p className="text-xs text-gray-500">Lakebase is populated and ready. Click <strong>Next</strong> to continue.</p>
       </div>
     );
   }
@@ -607,7 +608,7 @@ function LakebaseProvisionStep({
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-600">
-        Provisioning your Lakebase instance. This typically takes 1–3 minutes on first deploy.
+        Setting up your Lakebase instance and loading initial data. This typically takes 3–8 minutes on first deploy.
       </p>
       <div className="space-y-2">
         {stages.map((s, i) => {

@@ -520,11 +520,20 @@ async def get_provision_lakebase_status() -> dict[str, Any]:
 
 
 def _run_bootstrap_only_task():
-    """Schema-only bootstrap for when PGHOST is already set by the resource binding."""
+    """Schema bootstrap + initial data hydration for when PGHOST is already set."""
     try:
+        _provision_task_state["stage"] = "bootstrapping"
         from db.bootstrap_lakebase_schema import bootstrap as _bootstrap
         _bootstrap()
-        _provision_task_state.update({"status": "done", "stage": "done", "error": None})
+        _provision_task_state["stage"] = "populating"
+        from server.lakebase_populate_from_source import populate_all_from_source
+        lb_results = populate_all_from_source()
+        failed = {k: v for k, v in lb_results.items() if isinstance(v, str) and v.startswith("error:")}
+        if failed:
+            first_err = next(iter(failed.values()))
+            _provision_task_state.update({"status": "error", "stage": "failed", "error": first_err[:500]})
+        else:
+            _provision_task_state.update({"status": "done", "stage": "done", "error": None})
     except Exception as exc:
         _provision_task_state.update({
             "status": "error",
@@ -542,7 +551,15 @@ def _run_lakebase_provision_task():
             _provision_task_state["stage"] = "bootstrapping"
             from db.bootstrap_lakebase_schema import bootstrap as _bootstrap
             _bootstrap()
-            _provision_task_state.update({"status": "done", "stage": "done", "error": None})
+            _provision_task_state["stage"] = "populating"
+            from server.lakebase_populate_from_source import populate_all_from_source
+            lb_results = populate_all_from_source()
+            failed = {k: v for k, v in lb_results.items() if isinstance(v, str) and v.startswith("error:")}
+            if failed:
+                first_err = next(iter(failed.values()))
+                _provision_task_state.update({"status": "error", "stage": "failed", "error": first_err[:500]})
+            else:
+                _provision_task_state.update({"status": "done", "stage": "done", "error": None})
         else:
             _provision_task_state.update({
                 "status": "error",
