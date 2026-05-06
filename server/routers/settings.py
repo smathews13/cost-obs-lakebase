@@ -717,6 +717,16 @@ def get_lakebase_status():
     connected = None  # not tested — live test blocks threadpool
     error = None
 
+    # Surface populate errors from the last rebuild
+    populate_log = None
+    _mv_log_path = os.path.join(os.path.dirname(__file__), "..", "..", ".settings", "mv_refresh_log.json")
+    try:
+        with open(_mv_log_path) as f:
+            mv_log = json.load(f)
+            populate_log = mv_log.get("lakebase_populate")
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+
     return {
         "active": True,
         "host": pghost,
@@ -724,6 +734,7 @@ def get_lakebase_status():
         "connected": connected,
         "error": error,
         "provision_log": provision_log,
+        "populate_log": populate_log,
     }
 
 

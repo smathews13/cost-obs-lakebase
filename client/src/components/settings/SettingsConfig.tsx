@@ -98,6 +98,7 @@ export function SettingsConfig({
       host: string | null;
       error: string | null;
     } | null;
+    populate_log: Record<string, number | string> | null;
   } | null>({
     queryKey: ["settings-lakebase"],
     queryFn: () => fetch("/api/settings/lakebase").then(r => r.json()).catch(() => null),
@@ -518,10 +519,10 @@ export function SettingsConfig({
                   className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Rebuild materialized views with selected lookback period"
                 >
-                  <svg className={`h-3.5 w-3.5 ${mvRefreshing ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  {mvRefreshing ? "Rebuilding…" : "Rebuild"}
+                  Rebuild
                 </button>
               </div>
             </div>
@@ -648,6 +649,17 @@ export function SettingsConfig({
               )}
             </div>
 
+            {/* Rebuilding banner */}
+            {mvRefreshing && (
+              <div className="mb-3 flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800">
+                <svg className="h-3.5 w-3.5 animate-spin shrink-0 text-[#FF3621]" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                </svg>
+                Rebuilding in background… The tables below will update automatically when complete.
+              </div>
+            )}
+
             {/* Lakebase instance panel — always visible */}
             {(() => {
               const log = lakebaseStatus?.provision_log;
@@ -753,6 +765,20 @@ export function SettingsConfig({
                           {lakebaseStatus.error}
                         </div>
                       )}
+                      {/* Postgres populate status from last rebuild */}
+                      {lakebaseStatus?.populate_log && (
+                        <div className="space-y-1 pt-1 border-t border-[#06B6D4]/20">
+                          <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Last rebuild sync</span>
+                          {Object.entries(lakebaseStatus.populate_log).map(([table, result]) => (
+                            <div key={table} className="flex items-center justify-between rounded-md bg-white border border-gray-100 px-3 py-1.5">
+                              <span className="text-xs font-mono text-gray-600">{table}</span>
+                              <span className={`text-xs font-medium ${typeof result === 'number' ? 'text-green-700' : 'text-red-600'}`}>
+                                {typeof result === 'number' ? `${result.toLocaleString()} rows` : result}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -766,17 +792,6 @@ export function SettingsConfig({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
                 </svg>
                 <span>{tablesStatus.auth_error}</span>
-              </div>
-            )}
-
-            {/* Rebuilding banner */}
-            {mvRefreshing && (
-              <div className="mb-3 flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800">
-                <svg className="h-3.5 w-3.5 animate-spin shrink-0 text-[#FF3621]" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                </svg>
-                Rebuilding in background… The tables below will update automatically when complete.
               </div>
             )}
 

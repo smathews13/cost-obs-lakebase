@@ -261,7 +261,7 @@ export function SettingsDialog({ isOpen, onClose, onTabVisibilityChange, onSetti
   return createPortal(
     <div className="animate-backdrop fixed inset-0 z-50 overflow-y-auto bg-black/30" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="flex min-h-full items-center justify-center p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
-        <div className="animate-dialog relative flex h-[40rem] w-full max-w-4xl flex-col rounded-lg bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="animate-dialog relative flex h-[40rem] w-full max-w-6xl flex-col rounded-lg bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
           {/* Header */}
           <div className="shrink-0 border-b border-gray-200 px-6 py-4">
             <div className="flex items-center justify-between">
