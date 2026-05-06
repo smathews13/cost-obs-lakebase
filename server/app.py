@@ -509,6 +509,16 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 730) -> 
             logger.error(f"MV refresh: {len(failed)} table(s) failed — {log_data['error']}")
         else:
             logger.info(f"MV refresh complete in {duration}s")
+
+        # Populate Lakebase postgres from Delta MVs (non-fatal if unavailable)
+        try:
+            from server.lakebase_populate import populate_all as _lb_populate
+            lb_results = _lb_populate()
+            if lb_results:
+                logger.info(f"Lakebase populate: {lb_results}")
+                log_data["lakebase_populate"] = lb_results
+        except Exception as lb_exc:
+            logger.warning(f"Lakebase populate failed (non-fatal): {lb_exc}")
     except Exception as exc:
         duration = round(time.monotonic() - refresh_start, 1)
         log_data = {

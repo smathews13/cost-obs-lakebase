@@ -116,8 +116,113 @@ def _get_mv_query(mv_query: str) -> str:
     return mv_query.format(catalog=catalog, schema=schema)
 
 
+# Postgres equivalents of the MV queries (%(name)s params, cost_obs schema)
+_PG_BILLING_SUMMARY = """
+SELECT
+  SUM(total_dbus) as total_dbus,
+  SUM(total_spend) as total_spend,
+  MAX(workspace_count) as workspace_count,
+  COUNT(DISTINCT usage_date) as days_in_range,
+  MIN(usage_date) as first_date,
+  MAX(usage_date) as last_date
+FROM cost_obs.daily_usage_summary
+WHERE usage_date BETWEEN %(start_date)s AND %(end_date)s
+"""
+
+_PG_BILLING_BY_PRODUCT = """
+SELECT
+  product_category,
+  SUM(total_dbus) as total_dbus,
+  SUM(total_spend) as total_spend,
+  MAX(workspace_count) as workspace_count
+FROM cost_obs.daily_product_breakdown
+WHERE usage_date BETWEEN %(start_date)s AND %(end_date)s
+GROUP BY product_category
+ORDER BY total_spend DESC
+"""
+
+_PG_BILLING_TIMESERIES = """
+SELECT
+  usage_date,
+  product_category,
+  total_dbus,
+  total_spend
+FROM cost_obs.daily_product_breakdown
+WHERE usage_date BETWEEN %(start_date)s AND %(end_date)s
+ORDER BY usage_date, product_category
+"""
+
+_PG_BILLING_BY_WORKSPACE = """
+SELECT
+  workspace_id,
+  MAX(workspace_name) as workspace_name,
+  SUM(total_dbus) as total_dbus,
+  SUM(total_spend) as total_spend
+FROM cost_obs.daily_workspace_breakdown
+WHERE usage_date BETWEEN %(start_date)s AND %(end_date)s
+GROUP BY workspace_id
+ORDER BY total_spend DESC
+"""
+
+_PG_SQL_TOOL_ATTRIBUTION = """
+SELECT
+  sql_product,
+  SUM(attributed_dbus) as total_dbus,
+  SUM(attributed_spend) as total_spend
+FROM cost_obs.sql_tool_attribution
+WHERE usage_date BETWEEN %(start_date)s AND %(end_date)s
+GROUP BY sql_product
+ORDER BY total_spend DESC
+"""
+
+_PG_ETL_BREAKDOWN = """
+SELECT
+  CASE
+    WHEN product_category = 'ETL - Streaming' THEN 'Streaming (SDP)'
+    WHEN product_category = 'ETL - Batch' THEN 'Batch Jobs'
+  END as etl_type,
+  SUM(total_dbus) as total_dbus,
+  SUM(total_spend) as total_spend
+FROM cost_obs.daily_product_breakdown
+WHERE usage_date BETWEEN %(start_date)s AND %(end_date)s
+  AND product_category IN ('ETL - Streaming', 'ETL - Batch')
+GROUP BY product_category
+ORDER BY total_spend DESC
+"""
+
+_PG_PLATFORM_KPIS = """
+SELECT
+  SUM(total_queries) as total_queries,
+  MAX(unique_query_users) as unique_query_users,
+  SUM(total_rows_read) as total_rows_read,
+  SUM(total_bytes_read) as total_bytes_read,
+  SUM(total_compute_seconds) as total_compute_seconds
+FROM cost_obs.daily_query_stats
+WHERE usage_date BETWEEN %(start_date)s AND %(end_date)s
+"""
+
+_MV_TO_PG = {
+    MV_BILLING_SUMMARY: _PG_BILLING_SUMMARY,
+    MV_BILLING_BY_PRODUCT: _PG_BILLING_BY_PRODUCT,
+    MV_BILLING_TIMESERIES: _PG_BILLING_TIMESERIES,
+    MV_BILLING_BY_WORKSPACE: _PG_BILLING_BY_WORKSPACE,
+    MV_SQL_TOOL_ATTRIBUTION: _PG_SQL_TOOL_ATTRIBUTION,
+    MV_ETL_BREAKDOWN: _PG_ETL_BREAKDOWN,
+    MV_PLATFORM_KPIS: _PG_PLATFORM_KPIS,
+}
+
+
 def _exec_mv(mv_template: str, params: dict) -> list[dict]:
-    """Execute a materialized view query against Delta."""
+    """Execute a materialized view query. Tries Lakebase postgres first, falls back to Delta."""
+    from server import lakebase
+    pg_sql = _MV_TO_PG.get(mv_template)
+    if pg_sql and lakebase.is_available():
+        try:
+            rows = lakebase.execute_query(pg_sql, params)
+            if rows:
+                return rows
+        except Exception as e:
+            logger.warning("Lakebase MV query failed, falling back to Delta: %s", e)
     catalog, schema = get_catalog_schema()
     return execute_query(mv_template.format(catalog=catalog, schema=schema), params)
 

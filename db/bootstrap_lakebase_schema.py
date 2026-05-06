@@ -14,10 +14,12 @@ import sys
 
 def _conninfo() -> str:
     import psycopg  # noqa: F401 — imported here so module loads without psycopg installed
-    from databricks.sdk import WorkspaceClient
     pghost = os.environ["PGHOST"]
     pgdb = os.environ.get("PGDATABASE", "postgres")
-    token = WorkspaceClient().config.oauth_token().access_token
+    token = os.environ.get("DATABRICKS_TOKEN", "")
+    if not token:
+        from databricks.sdk import WorkspaceClient
+        token = WorkspaceClient().config.oauth_token().access_token
     return (
         f"host={pghost} dbname={pgdb} user=token password={token} "
         "sslmode=require connect_timeout=15"
@@ -94,6 +96,71 @@ CREATE INDEX IF NOT EXISTS idx_cluster_daily_date
     ON cost_obs.cluster_daily (usage_date DESC);
 CREATE INDEX IF NOT EXISTS idx_user_daily_date
     ON cost_obs.user_daily (usage_date DESC);
+
+-- ── MV mirror tables (populated from Delta materialized views after each rebuild) ──
+
+-- Mirrors daily_usage_summary Delta MV
+CREATE TABLE IF NOT EXISTS cost_obs.daily_usage_summary (
+    usage_date              DATE NOT NULL PRIMARY KEY,
+    total_dbus              DOUBLE PRECISION,
+    total_spend             DOUBLE PRECISION,
+    effective_list_spend    DOUBLE PRECISION,
+    workspace_count         INTEGER,
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_daily_usage_summary_date
+    ON cost_obs.daily_usage_summary (usage_date DESC);
+
+-- Mirrors daily_product_breakdown Delta MV
+CREATE TABLE IF NOT EXISTS cost_obs.daily_product_breakdown (
+    usage_date              DATE NOT NULL,
+    product_category        TEXT NOT NULL,
+    total_dbus              DOUBLE PRECISION,
+    total_spend             DOUBLE PRECISION,
+    effective_list_spend    DOUBLE PRECISION,
+    workspace_count         INTEGER,
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (usage_date, product_category)
+);
+CREATE INDEX IF NOT EXISTS idx_daily_product_breakdown_date
+    ON cost_obs.daily_product_breakdown (usage_date DESC);
+
+-- Mirrors daily_workspace_breakdown Delta MV
+CREATE TABLE IF NOT EXISTS cost_obs.daily_workspace_breakdown (
+    usage_date              DATE NOT NULL,
+    workspace_id            TEXT NOT NULL,
+    workspace_name          TEXT,
+    total_dbus              DOUBLE PRECISION,
+    total_spend             DOUBLE PRECISION,
+    effective_list_spend    DOUBLE PRECISION,
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (usage_date, workspace_id)
+);
+CREATE INDEX IF NOT EXISTS idx_daily_workspace_breakdown_date
+    ON cost_obs.daily_workspace_breakdown (usage_date DESC);
+
+-- Mirrors sql_tool_attribution Delta MV
+CREATE TABLE IF NOT EXISTS cost_obs.sql_tool_attribution (
+    usage_date                      DATE NOT NULL,
+    sql_product                     TEXT NOT NULL,
+    warehouse_id                    TEXT NOT NULL,
+    attributed_dbus                 DOUBLE PRECISION,
+    attributed_spend                DOUBLE PRECISION,
+    attributed_effective_list_spend DOUBLE PRECISION,
+    updated_at                      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (usage_date, sql_product, warehouse_id)
+);
+
+-- Mirrors daily_query_stats Delta MV
+CREATE TABLE IF NOT EXISTS cost_obs.daily_query_stats (
+    usage_date              DATE NOT NULL PRIMARY KEY,
+    total_queries           BIGINT,
+    unique_query_users      BIGINT,
+    total_rows_read         BIGINT,
+    total_bytes_read        BIGINT,
+    total_compute_seconds   DOUBLE PRECISION,
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 

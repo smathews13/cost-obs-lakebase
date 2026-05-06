@@ -74,6 +74,20 @@ def _get_pool():
     return _pool
 
 
+def execute_query(sql: str, params: dict | None = None) -> list[dict]:
+    """Execute a postgres query and return rows as a list of dicts."""
+    import psycopg.rows
+    pool = _get_pool()
+    try:
+        with pool.connection(timeout=10) as conn:
+            with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
+                cur.execute(sql, params or {})
+                return [dict(r) for r in cur.fetchall()]
+    except Exception as e:
+        logger.error("Lakebase execute_query failed: %s", e)
+        raise
+
+
 @contextmanager
 def get_connection() -> Generator:
     """Context manager that yields a psycopg Connection from the pool."""
