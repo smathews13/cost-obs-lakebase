@@ -174,6 +174,7 @@ export function SettingsConfig({
         clearInterval(pollIntervalRef.current!);
         pollIntervalRef.current = null;
         setMvRefreshing(false);
+        refetchLakebase();
       }
     }, 30_000);
   }
@@ -496,7 +497,7 @@ export function SettingsConfig({
                 ) : (
                   <span className="text-xs text-gray-500">
                     {tablesStatus.refresh_status.hours_since_refresh < 1
-                      ? "Refreshed &lt;1h ago"
+                      ? "Refreshed <1h ago"
                       : `Refreshed ${tablesStatus.refresh_status.hours_since_refresh}h ago`}
                   </span>
                 )}
