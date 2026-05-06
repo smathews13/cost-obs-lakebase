@@ -187,18 +187,23 @@ async def get_setup_status() -> dict[str, Any]:
 
     # ── OLTP mode: Lakebase is the data store — no Delta MVs needed ──────────
     if os.environ.get("PGHOST"):
-        try:
-            from server import lakebase as _lb
-            rows = await _asyncio.get_running_loop().run_in_executor(
-                None,
-                lambda: _lb.execute_query(
-                    "SELECT COUNT(*) AS cnt FROM cost_obs.daily_usage_summary"
-                ),
-            )
-            has_data = rows and rows[0].get("cnt", 0) > 0
-        except Exception as _lb_err:
-            logger.warning("OLTP status check failed: %s", _lb_err)
+        from server import lakebase as _lb
+        # Only query Lakebase if the pool is already open — opening it here would
+        # trigger connection retries that flood logs before setup has run.
+        if not _lb.is_pool_open():
             has_data = False
+        else:
+            try:
+                rows = await _asyncio.get_running_loop().run_in_executor(
+                    None,
+                    lambda: _lb.execute_query(
+                        "SELECT COUNT(*) AS cnt FROM cost_obs.daily_usage_summary"
+                    ),
+                )
+                has_data = rows and rows[0].get("cnt", 0) > 0
+            except Exception as _lb_err:
+                logger.warning("OLTP status check failed: %s", _lb_err)
+                has_data = False
 
         if has_data:
             return {

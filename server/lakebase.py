@@ -24,6 +24,11 @@ def is_available() -> bool:
     return bool(os.environ.get("PGHOST"))
 
 
+def is_pool_open() -> bool:
+    """Return True if the connection pool has been opened (i.e. setup has run)."""
+    return _pool is not None
+
+
 def _make_conninfo() -> str:
     """Build a fresh conninfo string for each new pool connection.
 

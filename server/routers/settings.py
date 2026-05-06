@@ -281,62 +281,28 @@ def _mask_connection(conn: dict) -> dict:
 
 @router.get("/config")
 async def get_app_config():
-    """Return current app configuration: warehouse, identity, and storage location."""
-    import asyncio as _asyncio
-    from server.db import get_catalog_schema, get_workspace_client
+    """Return current app configuration from env vars — no SDK calls needed.
 
-    http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
-    warehouse_id = http_path.split("/")[-1] if http_path else None
+    All values are injected by Databricks Apps at startup:
+    DATABRICKS_HOST, DATABRICKS_CLIENT_ID, DATABRICKS_WAREHOUSE_ID,
+    COST_OBS_CATALOG, COST_OBS_SCHEMA.
+    """
+    from server.db import get_catalog_schema
 
-    # Catalog/schema comes from env vars only — no network call needed
+    warehouse_id = (
+        os.getenv("DATABRICKS_WAREHOUSE_ID")
+        or (os.getenv("DATABRICKS_HTTP_PATH", "").split("/")[-1] or None)
+    )
+    warehouse = {"id": warehouse_id, "name": None, "size": None, "state": "UNKNOWN"} if warehouse_id else None
+
+    sp_id = os.getenv("DATABRICKS_CLIENT_ID", "")
+    identity = {"display_name": sp_id, "user_name": sp_id} if sp_id else None
+
     try:
         catalog, schema = get_catalog_schema()
         storage = {"catalog": catalog, "schema": schema}
     except Exception:
         storage = None
-
-    # Workspace client is created once here (in async context where the user
-    # token context var is live) so both thread callables share it safely.
-    try:
-        w = get_workspace_client()
-    except Exception as e:
-        logger.warning("Could not create workspace client: %s", e)
-        return {"warehouse": None, "identity": None, "storage_location": storage}
-
-    loop = _asyncio.get_running_loop()
-
-    def _fetch_warehouse():
-        if not warehouse_id:
-            return None
-        try:
-            wh = w.warehouses.get(warehouse_id)
-            return {"id": wh.id, "name": wh.name, "size": wh.cluster_size,
-                    "state": str(wh.state.value) if wh.state else "UNKNOWN"}
-        except Exception as e:
-            logger.warning("Could not fetch warehouse details: %s", e)
-            return {"id": warehouse_id, "name": None, "size": None, "state": "UNKNOWN"}
-
-    def _fetch_identity():
-        try:
-            me = w.current_user.me()
-            return {"display_name": me.display_name, "user_name": me.user_name}
-        except Exception as e:
-            logger.warning("Could not fetch current identity: %s", e)
-            return None
-
-    # Run both SDK network calls concurrently with a 8s timeout each.
-    try:
-        warehouse, identity = await _asyncio.wait_for(
-            _asyncio.gather(
-                loop.run_in_executor(None, _fetch_warehouse),
-                loop.run_in_executor(None, _fetch_identity),
-            ),
-            timeout=8.0,
-        )
-    except _asyncio.TimeoutError:
-        logger.warning("get_app_config: SDK calls timed out after 8s")
-        warehouse = {"id": warehouse_id, "name": None, "size": None, "state": "UNKNOWN"} if warehouse_id else None
-        identity = None
 
     return {"warehouse": warehouse, "identity": identity, "storage_location": storage}
 
