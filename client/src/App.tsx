@@ -193,6 +193,7 @@ function Dashboard() {
   // user's OAuth token — show a spinner and poll until ready (no wizard needed).
   useEffect(() => {
     if (localStorage.getItem("coc-setup-complete") === "true") return;
+    if (new URLSearchParams(window.location.search).get("setup") === "true") return;
     fetch("/api/setup/status")
       .then((r) => r.json())
       .then((status) => {
