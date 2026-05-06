@@ -160,7 +160,13 @@ def provision() -> bool:
 
         os.environ["PGHOST"] = host
         os.environ.setdefault("PGDATABASE", "postgres")
-        logger.info("Lakebase ready — PGHOST=%s", host)
+        # PGUSER = app SP client_id (the Postgres role Databricks creates via the
+        # lakebase-db resource binding).  Set as fallback for non-bundle deployments;
+        # the bundle injects PGUSER automatically when the resource is bound.
+        client_id = os.environ.get("DATABRICKS_CLIENT_ID", "")
+        if client_id:
+            os.environ.setdefault("PGUSER", client_id)
+        logger.info("Lakebase ready — PGHOST=%s PGUSER=%s", host, os.environ.get("PGUSER", "(not set)"))
         _write_status("done", "active", host=host)
         return True
 

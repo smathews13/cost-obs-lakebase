@@ -46,8 +46,12 @@ env:
   # - name: AZURE_SUBSCRIPTION_ID
   #   value: <subscription-id>
 
-  # Lakebase — injected by databricks.yml bundle when Lakebase is provisioned.
-  # Not set here; if bundle provisioning fails the app falls back to Delta tables.
+  # Lakebase — injected automatically by the Apps runtime when the lakebase-db
+  # postgres resource (defined in databricks.yml) is bound to the app.
+  # PGHOST / PGDATABASE / PGPORT / PGSSLMODE / PGUSER are injected by the platform;
+  # LAKEBASE_ENDPOINT resolves to the endpoint path used by generate_database_credential.
+  - name: LAKEBASE_ENDPOINT
+    valueFrom: lakebase-db
 
   # AWS / Azure actual cost tables (defaults: billing.aws / billing.azure)
   # - name: AWS_COST_CATALOG

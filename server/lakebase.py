@@ -25,27 +25,39 @@ def is_available() -> bool:
 
 
 def _make_conninfo() -> str:
-    """Build a fresh conninfo string with a current OAuth token.
+    """Build a fresh conninfo string for each new pool connection.
 
-    Called by the pool for every new physical connection so tokens stay fresh.
-    Databricks Apps injects DATABRICKS_TOKEN as a short-lived OAuth bearer token
-    and rotates it automatically — read it fresh from env on each call.
-    Fall back to the SDK oauth_token() flow for non-Apps deployments (M2M).
+    Auth pattern (Databricks Apps + Lakebase declarative bundle):
+    - PGHOST / PGDATABASE / PGPORT / PGSSLMODE / PGUSER are injected automatically
+      by the Apps runtime when the lakebase-db postgres resource is bound.
+    - PGUSER == app SP client_id, which is the Postgres role Databricks creates.
+    - Password: call generate_database_credential(endpoint=LAKEBASE_ENDPOINT) for a
+      fresh short-lived token.  LAKEBASE_ENDPOINT is populated via valueFrom in
+      app.yaml and resolves to the endpoint path injected by the resource binding.
+    - Fallback (non-bundle / local dev): use DATABRICKS_TOKEN (app SP bearer token).
     """
     pghost = os.environ.get("PGHOST", "")
     pgdatabase = os.environ.get("PGDATABASE", "postgres")
-    token = os.environ.get("DATABRICKS_TOKEN", "")
-    if not token:
+    pgport = os.environ.get("PGPORT", "5432")
+    pgsslmode = os.environ.get("PGSSLMODE", "require")
+    pguser = os.environ.get("PGUSER") or os.environ.get("DATABRICKS_CLIENT_ID", "")
+
+    lakebase_endpoint = os.environ.get("LAKEBASE_ENDPOINT", "")
+    if lakebase_endpoint:
         from databricks.sdk import WorkspaceClient
-        token = WorkspaceClient().config.oauth_token().access_token
-    logger.debug("Lakebase conninfo: host=%s db=%s user=token token_len=%d", pghost, pgdatabase, len(token))
+        cred = WorkspaceClient().postgres.generate_database_credential(endpoint=lakebase_endpoint)
+        password = cred.token
+    else:
+        password = os.environ.get("DATABRICKS_TOKEN", "")
+        if not password:
+            from databricks.sdk import WorkspaceClient
+            password = WorkspaceClient().config.oauth_token().access_token
+
+    logger.debug("Lakebase conninfo: host=%s db=%s user=%s", pghost, pgdatabase, pguser)
     return (
-        f"host={pghost} "
-        f"dbname={pgdatabase} "
-        "user=token "
-        f"password={token} "
-        "sslmode=require "
-        "connect_timeout=10"
+        f"host={pghost} port={pgport} dbname={pgdatabase} "
+        f"user={pguser} password={password} "
+        f"sslmode={pgsslmode} connect_timeout=10"
     )
 
 

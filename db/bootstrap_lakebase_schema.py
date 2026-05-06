@@ -16,13 +16,23 @@ def _conninfo() -> str:
     import psycopg  # noqa: F401 — imported here so module loads without psycopg installed
     pghost = os.environ["PGHOST"]
     pgdb = os.environ.get("PGDATABASE", "postgres")
-    token = os.environ.get("DATABRICKS_TOKEN", "")
-    if not token:
+    pgport = os.environ.get("PGPORT", "5432")
+    pgsslmode = os.environ.get("PGSSLMODE", "require")
+    pguser = os.environ.get("PGUSER") or os.environ.get("DATABRICKS_CLIENT_ID", "")
+    lakebase_endpoint = os.environ.get("LAKEBASE_ENDPOINT", "")
+    if lakebase_endpoint:
         from databricks.sdk import WorkspaceClient
-        token = WorkspaceClient().config.oauth_token().access_token
+        cred = WorkspaceClient().postgres.generate_database_credential(endpoint=lakebase_endpoint)
+        token = cred.token
+    else:
+        token = os.environ.get("DATABRICKS_TOKEN", "")
+        if not token:
+            from databricks.sdk import WorkspaceClient
+            token = WorkspaceClient().config.oauth_token().access_token
     return (
-        f"host={pghost} dbname={pgdb} user=token password={token} "
-        "sslmode=require connect_timeout=15"
+        f"host={pghost} port={pgport} dbname={pgdb} "
+        f"user={pguser} password={token} "
+        f"sslmode={pgsslmode} connect_timeout=15"
     )
 
 
