@@ -494,39 +494,52 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 730) -> 
     log_data: dict = {"last_refresh_utc": start_utc, "duration_seconds": 0, "mv_timings": {}, "status": "error", "error": "unknown"}
     try:
         catalog, schema = get_catalog_schema()
-        results = refresh_materialized_views(catalog, schema, lookback_days=lookback_days)
-        mv_timings = results.pop("__mv_timings__", {})
-        duration = round(time.monotonic() - refresh_start, 1)
-        failed = {k: v for k, v in results.items() if isinstance(v, str) and v.startswith("error:")}
-        log_data = {
-            "last_refresh_utc": start_utc,
-            "duration_seconds": duration,
-            "mv_timings": mv_timings,
-            "status": "partial_error" if failed else "success",
-        }
-        if failed:
-            log_data["error"] = "; ".join(f"{k}: {v}" for k, v in failed.items())
-            logger.error(f"MV refresh: {len(failed)} table(s) failed — {log_data['error']}")
-        else:
-            logger.info(f"MV refresh complete in {duration}s")
-        # Invalidate caches so next request hits fresh MV data immediately
-        try:
-            from server.routers.billing import _mv_cache
-            _mv_cache["available"] = None
-            from server.db import clear_query_cache
-            clear_query_cache()
-        except Exception as cache_exc:
-            logger.warning(f"Cache invalidation after MV refresh failed: {cache_exc}")
+        from server import lakebase as _lakebase_mod
 
-        # Populate Lakebase postgres from Delta MVs (non-fatal if unavailable)
-        try:
-            from server.lakebase_populate import populate_all as _lb_populate
-            lb_results = _lb_populate()
-            if lb_results:
-                logger.info(f"Lakebase populate: {lb_results}")
-                log_data["lakebase_populate"] = lb_results
-        except Exception as lb_exc:
-            logger.warning(f"Lakebase populate failed (non-fatal): {lb_exc}")
+        if _lakebase_mod.is_available():
+            # OLTP mode: no Delta MVs — populate Lakebase directly from system tables
+            from server.lakebase_populate_from_source import populate_all_from_source
+            results = populate_all_from_source(lookback_days=lookback_days)
+            mv_timings: dict = {}
+            duration = round(time.monotonic() - refresh_start, 1)
+            failed = {k: v for k, v in results.items() if isinstance(v, str) and v.startswith("error:")}
+            log_data = {
+                "last_refresh_utc": start_utc,
+                "duration_seconds": duration,
+                "mv_timings": {},
+                "status": "partial_error" if failed else "success",
+                "lakebase_populate": results,
+            }
+            if failed:
+                log_data["error"] = "; ".join(f"{k}: {v}" for k, v in failed.items())
+                logger.error(f"Lakebase populate: {len(failed)} table(s) failed — {log_data['error']}")
+            else:
+                logger.info(f"Lakebase populate complete in {duration}s: {results}")
+        else:
+            # OLAP mode: refresh Delta materialized views via SQL warehouse
+            results = refresh_materialized_views(catalog, schema, lookback_days=lookback_days)
+            mv_timings = results.pop("__mv_timings__", {})
+            duration = round(time.monotonic() - refresh_start, 1)
+            failed = {k: v for k, v in results.items() if isinstance(v, str) and v.startswith("error:")}
+            log_data = {
+                "last_refresh_utc": start_utc,
+                "duration_seconds": duration,
+                "mv_timings": mv_timings,
+                "status": "partial_error" if failed else "success",
+            }
+            if failed:
+                log_data["error"] = "; ".join(f"{k}: {v}" for k, v in failed.items())
+                logger.error(f"MV refresh: {len(failed)} table(s) failed — {log_data['error']}")
+            else:
+                logger.info(f"MV refresh complete in {duration}s")
+            # Invalidate caches so next request hits fresh MV data immediately
+            try:
+                from server.routers.billing import _mv_cache
+                _mv_cache["available"] = None
+                from server.db import clear_query_cache
+                clear_query_cache()
+            except Exception as cache_exc:
+                logger.warning(f"Cache invalidation after MV refresh failed: {cache_exc}")
     except Exception as exc:
         duration = round(time.monotonic() - refresh_start, 1)
         log_data = {
