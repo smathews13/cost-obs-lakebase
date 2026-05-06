@@ -287,13 +287,29 @@ async def get_app_config():
 
     http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
     warehouse_id = http_path.split("/")[-1] if http_path else None
+
+    # Catalog/schema comes from env vars only — no network call needed
+    try:
+        catalog, schema = get_catalog_schema()
+        storage = {"catalog": catalog, "schema": schema}
+    except Exception:
+        storage = None
+
+    # Workspace client is created once here (in async context where the user
+    # token context var is live) so both thread callables share it safely.
+    try:
+        w = get_workspace_client()
+    except Exception as e:
+        logger.warning("Could not create workspace client: %s", e)
+        return {"warehouse": None, "identity": None, "storage_location": storage}
+
     loop = _asyncio.get_running_loop()
 
     def _fetch_warehouse():
         if not warehouse_id:
             return None
         try:
-            wh = get_workspace_client().warehouses.get(warehouse_id)
+            wh = w.warehouses.get(warehouse_id)
             return {"id": wh.id, "name": wh.name, "size": wh.cluster_size,
                     "state": str(wh.state.value) if wh.state else "UNKNOWN"}
         except Exception as e:
@@ -302,25 +318,25 @@ async def get_app_config():
 
     def _fetch_identity():
         try:
-            me = get_workspace_client().current_user.me()
+            me = w.current_user.me()
             return {"display_name": me.display_name, "user_name": me.user_name}
         except Exception as e:
             logger.warning("Could not fetch current identity: %s", e)
             return None
 
-    def _fetch_catalog():
-        try:
-            catalog, schema = get_catalog_schema()
-            return {"catalog": catalog, "schema": schema}
-        except Exception as e:
-            logger.warning("Could not fetch catalog/schema: %s", e)
-            return None
-
-    warehouse, identity, storage = await _asyncio.gather(
-        loop.run_in_executor(None, _fetch_warehouse),
-        loop.run_in_executor(None, _fetch_identity),
-        loop.run_in_executor(None, _fetch_catalog),
-    )
+    # Run both SDK network calls concurrently with a 8s timeout each.
+    try:
+        warehouse, identity = await _asyncio.wait_for(
+            _asyncio.gather(
+                loop.run_in_executor(None, _fetch_warehouse),
+                loop.run_in_executor(None, _fetch_identity),
+            ),
+            timeout=8.0,
+        )
+    except _asyncio.TimeoutError:
+        logger.warning("get_app_config: SDK calls timed out after 8s")
+        warehouse = {"id": warehouse_id, "name": None, "size": None, "state": "UNKNOWN"} if warehouse_id else None
+        identity = None
 
     return {"warehouse": warehouse, "identity": identity, "storage_location": storage}
 
