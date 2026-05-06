@@ -491,28 +491,46 @@ _provision_task_state: dict = {"status": "idle", "stage": None, "error": None}
 
 @router.post("/provision-lakebase")
 async def provision_lakebase_endpoint(background_tasks: BackgroundTasks) -> dict[str, Any]:
-    """Provision Lakebase (project → branch → endpoint) and bootstrap Postgres schema.
+    """Provision Lakebase and bootstrap the Postgres schema.
 
-    Idempotent — safe to call multiple times. If PGHOST is already set (resource
-    injected by the Apps runtime), returns done immediately. If provisioning is
-    already running, returns already_running so the client keeps polling /status.
+    If PGHOST is already injected (resource binding in app.yaml), skips infra
+    provisioning and runs only the schema bootstrap (idempotent — CREATE IF NOT
+    EXISTS). If provisioning/bootstrap is already running, returns already_running.
+    If already completed this process lifetime, returns done immediately.
     """
-    if os.environ.get("PGHOST"):
-        _provision_task_state.update({"status": "done", "stage": "done", "error": None})
-        return {"status": "done", "task": _provision_task_state.copy()}
     if _provision_task_state["status"] == "running":
         return {"status": "already_running", "task": _provision_task_state.copy()}
-    _provision_task_state.update({"status": "running", "stage": "provisioning", "error": None})
-    background_tasks.add_task(_run_lakebase_provision_task)
+    if _provision_task_state["status"] == "done":
+        return {"status": "done", "task": _provision_task_state.copy()}
+
+    if os.environ.get("PGHOST"):
+        # Infra already exists — just bootstrap the schema
+        _provision_task_state.update({"status": "running", "stage": "bootstrapping", "error": None})
+        background_tasks.add_task(_run_bootstrap_only_task)
+    else:
+        _provision_task_state.update({"status": "running", "stage": "provisioning", "error": None})
+        background_tasks.add_task(_run_lakebase_provision_task)
     return {"status": "started", "task": _provision_task_state.copy()}
 
 
 @router.get("/provision-lakebase/status")
 async def get_provision_lakebase_status() -> dict[str, Any]:
     """Return the current Lakebase provisioning status."""
-    if os.environ.get("PGHOST") and _provision_task_state["status"] != "error":
-        return {"status": "done", "stage": "done", "error": None}
     return _provision_task_state.copy()
+
+
+def _run_bootstrap_only_task():
+    """Schema-only bootstrap for when PGHOST is already set by the resource binding."""
+    try:
+        from db.bootstrap_lakebase_schema import bootstrap as _bootstrap
+        _bootstrap()
+        _provision_task_state.update({"status": "done", "stage": "done", "error": None})
+    except Exception as exc:
+        _provision_task_state.update({
+            "status": "error",
+            "stage": "failed",
+            "error": str(exc)[:500],
+        })
 
 
 def _run_lakebase_provision_task():

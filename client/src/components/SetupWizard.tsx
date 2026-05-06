@@ -87,7 +87,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   const provisionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const STEPS: WizardStep[] = storageMode === "oltp"
-    ? ["welcome", "storage-mode", "lakebase-provision", "permissions", "create-tables", "complete"]
+    ? ["welcome", "storage-mode", "lakebase-provision", "permissions", "complete"]
     : ["welcome", "storage-mode", "permissions", "create-tables", "complete"];
 
   useEffect(() => {
@@ -151,7 +151,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
     setProvisioning(true);
     setProvisionStage("provisioning");
 
-    // Check if already done (PGHOST injected by resource binding)
+    // Check if already completed or running this process lifetime
     try {
       const sr = await fetch("/api/setup/provision-lakebase/status");
       if (sr.ok) {
@@ -164,10 +164,10 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
         }
         if (d.status === "running") {
           setProvisionStage(d.stage || "provisioning");
-          // attach to existing run — skip POST, just poll
           attachProvisionPoll();
           return;
         }
+        // idle or error → fall through to POST
       }
     } catch { /* fall through to fresh start */ }
 
