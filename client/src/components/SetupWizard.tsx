@@ -50,12 +50,13 @@ interface SetupStatus {
   task?: { status: string; error: string | null };
 }
 
-type WizardStep = "welcome" | "permissions" | "create-tables" | "complete";
-
-const STEPS: WizardStep[] = ["welcome", "permissions", "create-tables", "complete"];
+type StorageMode = "olap" | "oltp";
+type WizardStep = "welcome" | "storage-mode" | "lakebase-provision" | "permissions" | "create-tables" | "complete";
 
 const STEP_LABELS: Record<WizardStep, string> = {
   welcome: "Environment",
+  "storage-mode": "Storage",
+  "lakebase-provision": "Lakebase",
   permissions: "Permissions",
   "create-tables": "Create Tables",
   complete: "Complete",
@@ -69,6 +70,7 @@ const CLOUD_LABELS: Record<string, string> = {
 
 export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   const [step, setStep] = useState<WizardStep>("welcome");
+  const [storageMode, setStorageMode] = useState<StorageMode | null>(null);
   const [config, setConfig] = useState<ConfigData | null>(null);
   const [cloud, setCloud] = useState<CloudData | null>(null);
   const [permissions, setPermissions] = useState<PermissionsData | null>(null);
@@ -76,6 +78,23 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Lakebase provision state
+  const [provisioning, setProvisioning] = useState(false);
+  const [provisionDone, setProvisionDone] = useState(false);
+  const [provisionError, setProvisionError] = useState<string | null>(null);
+  const [provisionStage, setProvisionStage] = useState<string>("idle");
+  const provisionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const STEPS: WizardStep[] = storageMode === "oltp"
+    ? ["welcome", "storage-mode", "lakebase-provision", "permissions", "create-tables", "complete"]
+    : ["welcome", "storage-mode", "permissions", "create-tables", "complete"];
+
+  useEffect(() => {
+    return () => {
+      if (provisionPollRef.current) clearInterval(provisionPollRef.current);
+    };
+  }, []);
 
   // Load initial data
   useEffect(() => {
@@ -127,6 +146,76 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
     return null;
   }, []);
 
+  const startProvision = useCallback(async () => {
+    setProvisionError(null);
+    setProvisioning(true);
+    setProvisionStage("provisioning");
+
+    // Check if already done (PGHOST injected by resource binding)
+    try {
+      const sr = await fetch("/api/setup/provision-lakebase/status");
+      if (sr.ok) {
+        const d = await sr.json();
+        if (d.status === "done") {
+          setProvisioning(false);
+          setProvisionDone(true);
+          setProvisionStage("done");
+          return;
+        }
+        if (d.status === "running") {
+          setProvisionStage(d.stage || "provisioning");
+          // attach to existing run — skip POST, just poll
+          attachProvisionPoll();
+          return;
+        }
+      }
+    } catch { /* fall through to fresh start */ }
+
+    try {
+      const res = await fetch("/api/setup/provision-lakebase", { method: "POST" });
+      if (!res.ok) {
+        const text = await res.text();
+        setProvisioning(false);
+        setProvisionError(`HTTP ${res.status}: ${text}`);
+        return;
+      }
+      const data = await res.json();
+      if (data.status === "done") {
+        setProvisioning(false);
+        setProvisionDone(true);
+        setProvisionStage("done");
+        return;
+      }
+      attachProvisionPoll();
+    } catch (e) {
+      setProvisioning(false);
+      setProvisionError(`Failed to start provisioning: ${e}`);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const attachProvisionPoll = useCallback(() => {
+    if (provisionPollRef.current) clearInterval(provisionPollRef.current);
+    provisionPollRef.current = setInterval(async () => {
+      try {
+        const sr = await fetch("/api/setup/provision-lakebase/status");
+        if (!sr.ok) return;
+        const d = await sr.json();
+        setProvisionStage(d.stage || "provisioning");
+        if (d.status === "done") {
+          clearInterval(provisionPollRef.current!);
+          provisionPollRef.current = null;
+          setProvisioning(false);
+          setProvisionDone(true);
+        } else if (d.status === "error") {
+          clearInterval(provisionPollRef.current!);
+          provisionPollRef.current = null;
+          setProvisioning(false);
+          setProvisionError(d.error || "Provisioning failed — check app logs");
+        }
+      } catch { /* ignore transient errors */ }
+    }, 2000);
+  }, []);
+
   const handleCreateTables = async () => {
     setCreating(true);
     setError(null);
@@ -137,7 +226,6 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
         throw new Error(`HTTP ${res.status}: ${body}`);
       }
 
-      // Poll for completion
       const poll = setInterval(async () => {
         const status = await pollSetupStatus();
         if (status?.all_tables_exist) {
@@ -156,7 +244,6 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
         }
       }, 2000);
 
-      // Safety timeout after 10 minutes
       setTimeout(() => {
         clearInterval(poll);
         setCreating(false);
@@ -173,6 +260,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
     if (idx < STEPS.length - 1) {
       const next = STEPS[idx + 1];
       setStep(next);
+      if (next === "lakebase-provision") startProvision();
       if (next === "permissions") loadPermissions();
       if (next === "create-tables") pollSetupStatus();
     }
@@ -209,7 +297,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
         <div className="flex border-b px-8 py-3" style={{ borderColor: '#E5E5E5' }}>
           {STEPS.map((s, i) => (
             <div key={s} className="flex flex-1 items-center">
-              <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
+              <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                 i < currentIdx ? "bg-green-500 text-white" :
                 i === currentIdx ? "text-white" : "bg-gray-200 text-gray-500"
               }`} style={i === currentIdx ? { backgroundColor: '#FF3621' } : undefined}>
@@ -228,7 +316,6 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
         {/* Body */}
         <div className="min-h-[320px] px-8 py-6">
           {error && (() => {
-            // If the error contains GRANT SQL, split it out into a code block
             const grantMatch = error.match(/^(.*?)(GRANT [^.]+(?:;\s*GRANT [^.]+)*)$/s);
             if (grantMatch) {
               const [, msg, grants] = grantMatch;
@@ -257,6 +344,19 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
             }} />
           )}
 
+          {step === "storage-mode" && (
+            <StorageModeStep selected={storageMode} onSelect={setStorageMode} />
+          )}
+
+          {step === "lakebase-provision" && (
+            <LakebaseProvisionStep
+              provisioning={provisioning}
+              provisionDone={provisionDone}
+              provisionError={provisionError}
+              provisionStage={provisionStage}
+            />
+          )}
+
           {step === "permissions" && (
             <PermissionsStep permissions={permissions} loading={loading} onRetry={() => loadPermissions(true)} />
           )}
@@ -265,16 +365,17 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
             <CreateTablesStep
               setupStatus={setupStatus}
               creating={creating}
+              storageMode={storageMode}
             />
           )}
 
-          {step === "complete" && <CompleteStep />}
+          {step === "complete" && <CompleteStep storageMode={storageMode} />}
         </div>
 
         {/* Footer */}
         <div className="flex items-center justify-between rounded-b-xl border-t px-8 py-4" style={{ borderColor: '#E5E5E5' }}>
           <div>
-            {currentIdx > 0 && step !== "complete" && (
+            {currentIdx > 0 && step !== "complete" && step !== "lakebase-provision" && (
               <button
                 onClick={goBack}
                 className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
@@ -291,6 +392,31 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
               >
                 Go to Dashboard
               </button>
+            ) : step === "lakebase-provision" ? (
+              provisioning ? (
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-[#FF3621]" />
+                  Setting up…
+                </div>
+              ) : provisionError ? (
+                <button
+                  onClick={() => {
+                    setProvisionError(null);
+                    setProvisioning(false);
+                    startProvision();
+                  }}
+                  className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors"
+                >
+                  Retry
+                </button>
+              ) : provisionDone ? (
+                <button
+                  onClick={goNext}
+                  className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors"
+                >
+                  Next
+                </button>
+              ) : null
             ) : step === "create-tables" ? (
               creating ? null
               : setupStatus?.all_tables_exist ? (
@@ -316,6 +442,14 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
               >
                 Next
               </button>
+            ) : step === "storage-mode" ? (
+              <button
+                onClick={goNext}
+                disabled={storageMode === null}
+                className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
             ) : (
               <button
                 onClick={goNext}
@@ -331,6 +465,174 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
       </div>
     </div>,
     document.body
+  );
+}
+
+function StorageModeStep({ selected, onSelect }: { selected: StorageMode | null; onSelect: (m: StorageMode) => void }) {
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-600">
+        Choose how cost data is stored and served. This determines the performance profile and infrastructure requirements for your deployment.
+      </p>
+      <div className="grid grid-cols-2 gap-4">
+        {/* OLAP card */}
+        <button
+          onClick={() => onSelect("olap")}
+          className={`rounded-xl border-2 p-5 text-left transition-all ${
+            selected === "olap"
+              ? "border-[#FF3621] bg-orange-50"
+              : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"
+          }`}
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${selected === "olap" ? "bg-[#FF3621]" : "bg-gray-100"}`}>
+              <svg className={`h-5 w-5 ${selected === "olap" ? "text-white" : "text-gray-500"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+              </svg>
+            </div>
+            {selected === "olap" && (
+              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#FF3621]">
+                <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+              </div>
+            )}
+          </div>
+          <h3 className="text-sm font-bold text-gray-900">Delta Materialized Views</h3>
+          <p className="mt-1 text-xs text-gray-500">Pre-aggregated Delta tables in Unity Catalog, queried via SQL Warehouse. Best for standard cost reporting.</p>
+          <div className="mt-3 space-y-1">
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <svg className="h-3.5 w-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              No extra infrastructure
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <svg className="h-3.5 w-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              Daily batch refresh
+            </div>
+          </div>
+        </button>
+
+        {/* OLTP card */}
+        <button
+          onClick={() => onSelect("oltp")}
+          className={`rounded-xl border-2 p-5 text-left transition-all ${
+            selected === "oltp"
+              ? "border-[#FF3621] bg-orange-50"
+              : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"
+          }`}
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${selected === "oltp" ? "bg-[#FF3621]" : "bg-gray-100"}`}>
+              <svg className={`h-5 w-5 ${selected === "oltp" ? "text-white" : "text-gray-500"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            {selected === "oltp" && (
+              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#FF3621]">
+                <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+              </div>
+            )}
+          </div>
+          <h3 className="text-sm font-bold text-gray-900">Lakebase (PostgreSQL)</h3>
+          <p className="mt-1 text-xs text-gray-500">Results cached in a Lakebase Autoscaling instance. Sub-100ms queries for interactive dashboards.</p>
+          <div className="mt-3 space-y-1">
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <svg className="h-3.5 w-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              Sub-100ms query latency
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <svg className="h-3.5 w-3.5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3a9 9 0 100 18A9 9 0 0012 3z" /></svg>
+              Requires Lakebase provisioning
+            </div>
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function LakebaseProvisionStep({
+  provisioning,
+  provisionDone,
+  provisionError,
+  provisionStage,
+}: {
+  provisioning: boolean;
+  provisionDone: boolean;
+  provisionError: string | null;
+  provisionStage: string;
+}) {
+  const stages: { key: string; label: string; description: string }[] = [
+    { key: "provisioning", label: "Provision Lakebase resources", description: "Creating project, branch, and autoscaling endpoint" },
+    { key: "bootstrapping", label: "Bootstrap Postgres schema", description: "Creating cost_obs schema and tables" },
+  ];
+
+  const stageIndex = provisionDone ? 2 : provisionStage === "bootstrapping" ? 1 : 0;
+
+  if (provisionError) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg bg-red-50 p-4 text-sm text-red-700">
+          <p className="font-medium">Lakebase provisioning failed</p>
+          <p className="mt-1 text-xs text-red-600">{provisionError}</p>
+        </div>
+        <p className="text-xs text-gray-500">Click <strong>Retry</strong> to try again, or check the app logs for details.</p>
+      </div>
+    );
+  }
+
+  if (provisionDone) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg bg-green-50 p-4 text-sm text-green-700">
+          <div className="flex items-center gap-2">
+            <svg className="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+            <span className="font-medium">Lakebase is ready</span>
+          </div>
+        </div>
+        <div className="space-y-2">
+          {stages.map((s) => (
+            <div key={s.key} className="flex items-start gap-3 rounded-lg bg-gray-50 px-4 py-3">
+              <svg className="mt-0.5 h-4 w-4 shrink-0 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              <div>
+                <p className="text-sm font-medium text-gray-800">{s.label}</p>
+                <p className="text-xs text-gray-500">{s.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-gray-500">Click <strong>Next</strong> to continue with permissions setup.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-600">
+        Provisioning your Lakebase instance. This typically takes 1–3 minutes on first deploy.
+      </p>
+      <div className="space-y-2">
+        {stages.map((s, i) => {
+          const isDone = i < stageIndex;
+          const isActive = i === stageIndex && provisioning;
+          return (
+            <div key={s.key} className={`flex items-start gap-3 rounded-lg px-4 py-3 ${isActive ? "bg-orange-50" : "bg-gray-50"}`}>
+              <div className="mt-0.5 shrink-0">
+                {isDone ? (
+                  <svg className="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                ) : isActive ? (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-200 border-t-[#FF3621]" />
+                ) : (
+                  <div className="h-4 w-4 rounded-full border-2 border-gray-200" />
+                )}
+              </div>
+              <div>
+                <p className={`text-sm font-medium ${isActive ? "text-gray-900" : isDone ? "text-gray-700" : "text-gray-400"}`}>{s.label}</p>
+                <p className={`text-xs ${isActive ? "text-gray-600" : "text-gray-400"}`}>{s.description}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -662,7 +964,6 @@ function PermissionsStep({ permissions, loading, onRetry }: { permissions: Permi
 
       {!summary.all_required_granted && (
         <div className="space-y-3">
-          {/* Auto-apply */}
           <div className="rounded-lg border border-[#FF3621]/20 bg-orange-50 p-3 space-y-2">
             <p className="text-xs font-medium text-gray-800">Apply SP grants automatically</p>
             <p className="text-[11px] text-gray-600">
@@ -687,7 +988,6 @@ function PermissionsStep({ permissions, loading, onRetry }: { permissions: Permi
             </div>
           </div>
 
-          {/* SQL fallback */}
           <details className="rounded-lg border border-gray-200 bg-gray-50 text-xs">
             <summary className="cursor-pointer px-3 py-2 font-medium text-gray-600 hover:text-gray-800">
               Manual SQL (if you prefer to run grants yourself)
@@ -728,9 +1028,10 @@ function PermissionsStep({ permissions, loading, onRetry }: { permissions: Permi
   );
 }
 
-function CreateTablesStep({ setupStatus, creating }: {
+function CreateTablesStep({ setupStatus, creating, storageMode }: {
   setupStatus: SetupStatus | null;
   creating: boolean;
+  storageMode: StorageMode | null;
 }) {
   if (creating) {
     return (
@@ -777,8 +1078,9 @@ function CreateTablesStep({ setupStatus, creating }: {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-600">
-        The app uses pre-aggregated materialized views for fast dashboard loading.
-        This step creates them with 365 days of historical data.
+        {storageMode === "oltp"
+          ? "The app uses pre-aggregated Delta views as the source for Lakebase. This step creates them with 365 days of historical data."
+          : "The app uses pre-aggregated materialized views for fast dashboard loading. This step creates them with 365 days of historical data."}
       </p>
 
       {setupStatus && setupStatus.missing_tables.length > 0 && (
@@ -796,7 +1098,7 @@ function CreateTablesStep({ setupStatus, creating }: {
   );
 }
 
-function CompleteStep() {
+function CompleteStep({ storageMode }: { storageMode: StorageMode | null }) {
   return (
     <div className="flex flex-col items-center justify-center py-8 text-center">
       <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
@@ -806,8 +1108,9 @@ function CompleteStep() {
       </div>
       <h3 className="text-lg font-bold text-gray-900">Setup Complete</h3>
       <p className="mt-2 max-w-sm text-sm text-gray-600">
-        Your environment is configured and materialized views are ready.
-        Click below to start exploring your cost data.
+        {storageMode === "oltp"
+          ? "Your Lakebase instance is provisioned and materialized views are ready. Click below to start exploring your cost data."
+          : "Your environment is configured and materialized views are ready. Click below to start exploring your cost data."}
       </p>
     </div>
   );
