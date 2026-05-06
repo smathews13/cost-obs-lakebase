@@ -156,7 +156,9 @@ function Dashboard() {
   const [tabVisibility, setTabVisibility] = useState<TabVisibility>(loadTabVisibility);
   // "pending" = checking, "initializing" = auto-creating MVs, true = wizard, false = dashboard
   const [showSetupWizard, setShowSetupWizard] = useState<boolean | "pending" | "initializing">(
-    localStorage.getItem("coc-setup-complete") === "true" ? false : "pending"
+    new URLSearchParams(window.location.search).get("setup") === "true"
+      ? true
+      : localStorage.getItem("coc-setup-complete") === "true" ? false : "pending"
   );
   const rqClient = useQueryClient();
 
