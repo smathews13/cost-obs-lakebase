@@ -702,13 +702,26 @@ async def get_auth_status_endpoint():
 
 @router.get("/lakebase")
 async def get_lakebase_status():
-    """Return Lakebase instance info and live connection test result."""
+    """Return Lakebase provisioning status, instance info, and live connection test."""
     import os as _os
     pghost = _os.environ.get("PGHOST", "")
     pgdatabase = _os.environ.get("PGDATABASE", "postgres")
 
+    # Read provisioning log written by provision_lakebase.py
+    provision_log = None
+    _log_path = os.path.join(os.path.dirname(__file__), "..", "..", ".settings", "lakebase_provision_log.json")
+    try:
+        with open(_log_path) as f:
+            provision_log = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+
     if not pghost:
-        return {"active": False, "host": None, "database": None, "connected": False, "error": None}
+        return {
+            "active": False, "host": None, "database": None,
+            "connected": False, "error": None,
+            "provision_log": provision_log,
+        }
 
     connected = False
     error = None
@@ -726,6 +739,7 @@ async def get_lakebase_status():
         "database": pgdatabase,
         "connected": connected,
         "error": error,
+        "provision_log": provision_log,
     }
 
 

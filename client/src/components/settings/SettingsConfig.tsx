@@ -81,11 +81,26 @@ export function SettingsConfig({
     database: string | null;
     connected: boolean;
     error: string | null;
+    provision_log: {
+      stage: string;
+      status: string;
+      updated_utc: string;
+      project_id: string;
+      branch_id: string;
+      endpoint_id: string;
+      host: string | null;
+      error: string | null;
+    } | null;
   } | null>({
     queryKey: ["settings-lakebase"],
     queryFn: () => fetch("/api/settings/lakebase").then(r => r.json()).catch(() => null),
-    staleTime: 30 * 1000,
-    enabled: !!authStatus?.lakebase_active,
+    staleTime: 15 * 1000,
+    refetchInterval: (data) => {
+      // Poll every 15s while provisioning is in progress
+      const log = (data as any)?.provision_log;
+      if (!log || log.status === "active" || log.status === "failed") return false;
+      return 15_000;
+    },
   });
   const [lakebasePinging, setLakebasePinging] = useState(false);
 
@@ -613,62 +628,116 @@ export function SettingsConfig({
               )}
             </div>
 
-            {/* Lakebase instance panel — shown when OLTP mode is active */}
-            {authStatus?.lakebase_active && (
-              <div className="mb-3 rounded-lg border border-[#06B6D4]/30 bg-[#06B6D4]/5 p-3 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <svg className="h-4 w-4 text-[#0891B2]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-                    </svg>
-                    <span className="text-sm font-semibold text-[#0891B2]">Lakebase Instance</span>
+            {/* Lakebase instance panel — always visible */}
+            {(() => {
+              const log = lakebaseStatus?.provision_log;
+              const isActive = lakebaseStatus?.active;
+              const isRunning = log && log.status !== "active" && log.status !== "failed";
+              const isFailed = log?.status === "failed";
+              const borderColor = isActive ? "border-[#06B6D4]/30" : isFailed ? "border-red-200" : "border-amber-200";
+              const bgColor = isActive ? "bg-[#06B6D4]/5" : isFailed ? "bg-red-50" : "bg-amber-50";
+              const titleColor = isActive ? "text-[#0891B2]" : isFailed ? "text-red-700" : "text-amber-700";
+              const STAGE_LABELS: Record<string, string> = {
+                connecting: "Connecting to Databricks…",
+                project: "Setting up Lakebase project…",
+                creating: "Creating…",
+                branch: "Setting up branch…",
+                endpoint: "Setting up endpoint…",
+                done: "Ready",
+                failed: "Provisioning failed",
+                import: "SDK import failed",
+                no_host: "Endpoint created but host unavailable — will retry on restart",
+              };
+              return (
+                <div className={`mb-3 rounded-lg border ${borderColor} ${bgColor} p-3 space-y-2.5`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <svg className={`h-4 w-4 ${titleColor}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+                      </svg>
+                      <span className={`text-sm font-semibold ${titleColor}`}>Lakebase Instance</span>
+                      {isRunning && (
+                        <svg className="h-3.5 w-3.5 animate-spin text-amber-500" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                        </svg>
+                      )}
+                    </div>
+                    <button
+                      onClick={async () => {
+                        setLakebasePinging(true);
+                        try { await refetchLakebase(); } finally { setLakebasePinging(false); }
+                      }}
+                      disabled={lakebasePinging || lakebaseLoading}
+                      className={`inline-flex items-center gap-1 rounded px-2 py-1 text-xs ${isActive ? "text-[#0891B2] hover:bg-[#06B6D4]/10" : "text-gray-500 hover:bg-gray-100"} transition-colors disabled:opacity-50`}
+                    >
+                      <svg className={`h-3.5 w-3.5 ${lakebasePinging || lakebaseLoading ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      {lakebasePinging || lakebaseLoading ? "Checking…" : "Refresh"}
+                    </button>
                   </div>
-                  <button
-                    onClick={async () => {
-                      setLakebasePinging(true);
-                      try { await refetchLakebase(); } finally { setLakebasePinging(false); }
-                    }}
-                    disabled={lakebasePinging || lakebaseLoading}
-                    className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-[#0891B2] hover:bg-[#06B6D4]/10 transition-colors disabled:opacity-50"
-                    title="Test connection"
-                  >
-                    <svg className={`h-3.5 w-3.5 ${lakebasePinging || lakebaseLoading ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    {lakebasePinging || lakebaseLoading ? "Testing…" : "Test connection"}
-                  </button>
-                </div>
 
-                {lakebaseLoading ? (
-                  <div className="text-xs text-[#0891B2]/70">Loading instance info…</div>
-                ) : lakebaseStatus ? (
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between rounded-md bg-white border border-[#06B6D4]/20 px-3 py-2">
-                      <span className="text-xs text-gray-500">Connection status</span>
-                      <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${lakebaseStatus.connected ? "text-green-700" : "text-red-600"}`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${lakebaseStatus.connected ? "bg-green-500" : "bg-red-500"}`} />
-                        {lakebaseStatus.connected ? "Connected" : "Unreachable"}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between rounded-md bg-white border border-[#06B6D4]/20 px-3 py-2">
-                      <span className="text-xs text-gray-500">Host</span>
-                      <span className="text-xs font-mono text-gray-700 truncate max-w-[280px]" title={lakebaseStatus.host ?? ""}>{lakebaseStatus.host ?? "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between rounded-md bg-white border border-[#06B6D4]/20 px-3 py-2">
-                      <span className="text-xs text-gray-500">Database</span>
-                      <span className="text-xs font-mono text-gray-700">{lakebaseStatus.database ?? "—"}</span>
-                    </div>
-                    {lakebaseStatus.error && (
-                      <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 wrap-break-word">
-                        {lakebaseStatus.error}
+                  {/* Provisioning status */}
+                  {log && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between rounded-md bg-white border border-gray-100 px-3 py-2">
+                        <span className="text-xs text-gray-500">Provisioning</span>
+                        <span className={`text-xs font-medium ${isActive ? "text-green-700" : isFailed ? "text-red-600" : "text-amber-600"}`}>
+                          {STAGE_LABELS[log.stage] ?? log.stage} {isRunning ? `(${log.stage})` : ""}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-xs text-red-600">Could not fetch instance info</div>
-                )}
-              </div>
-            )}
+                      <div className="flex items-center justify-between rounded-md bg-white border border-gray-100 px-3 py-2">
+                        <span className="text-xs text-gray-500">Project / Branch / Endpoint</span>
+                        <span className="text-xs font-mono text-gray-600">{log.project_id} / {log.branch_id} / {log.endpoint_id}</span>
+                      </div>
+                      {log.updated_utc && (
+                        <div className="flex items-center justify-between rounded-md bg-white border border-gray-100 px-3 py-2">
+                          <span className="text-xs text-gray-500">Last updated</span>
+                          <span className="text-xs text-gray-600">{log.updated_utc.replace("T", " ").replace("Z", " UTC")}</span>
+                        </div>
+                      )}
+                      {log.error && (
+                        <details className="rounded-md border border-red-200 bg-red-50 px-3 py-2">
+                          <summary className="cursor-pointer text-xs font-medium text-red-700">Provisioning error (click to expand)</summary>
+                          <pre className="mt-2 text-[10px] text-red-600 whitespace-pre-wrap break-all">{log.error}</pre>
+                        </details>
+                      )}
+                    </div>
+                  )}
+
+                  {!log && !lakebaseLoading && (
+                    <div className="text-xs text-amber-700">Provisioning has not started yet — the app may be starting up.</div>
+                  )}
+
+                  {/* Connection details — only when active */}
+                  {isActive && (
+                    <div className="space-y-1.5 pt-1 border-t border-[#06B6D4]/20">
+                      <div className="flex items-center justify-between rounded-md bg-white border border-[#06B6D4]/20 px-3 py-2">
+                        <span className="text-xs text-gray-500">Connection</span>
+                        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${lakebaseStatus?.connected ? "text-green-700" : "text-red-600"}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${lakebaseStatus?.connected ? "bg-green-500" : "bg-red-500"}`} />
+                          {lakebaseStatus?.connected ? "Connected" : "Unreachable"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-md bg-white border border-[#06B6D4]/20 px-3 py-2">
+                        <span className="text-xs text-gray-500">Host</span>
+                        <span className="text-xs font-mono text-gray-700 truncate max-w-[280px]" title={lakebaseStatus?.host ?? ""}>{lakebaseStatus?.host ?? "—"}</span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-md bg-white border border-[#06B6D4]/20 px-3 py-2">
+                        <span className="text-xs text-gray-500">Database</span>
+                        <span className="text-xs font-mono text-gray-700">{lakebaseStatus?.database ?? "—"}</span>
+                      </div>
+                      {lakebaseStatus?.error && (
+                        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                          {lakebaseStatus.error}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Auth error banner — Delta mode only */}
             {!authStatus?.lakebase_active && tablesStatus?.auth_error && (
