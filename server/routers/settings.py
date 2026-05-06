@@ -723,24 +723,8 @@ def get_lakebase_status():
             "provision_log": provision_log,
         }
 
-    connected = False
+    connected = None  # not tested — live test blocks threadpool
     error = None
-    try:
-        import psycopg
-        token = _os.environ.get("DATABRICKS_TOKEN", "")
-        if not token:
-            from databricks.sdk import WorkspaceClient
-            token = WorkspaceClient().config.oauth_token().access_token
-        conninfo = (
-            f"host={pghost} dbname={pgdatabase} user=token password={token} "
-            "sslmode=require connect_timeout=8"
-        )
-        with psycopg.connect(conninfo) as conn:
-            conn.execute("SELECT 1")
-        connected = True
-    except Exception as e:
-        error = str(e)[:500]
-        logger.warning("Lakebase connection test failed: %s", e)
 
     return {
         "active": True,
