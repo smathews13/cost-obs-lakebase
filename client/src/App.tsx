@@ -154,11 +154,11 @@ function Dashboard() {
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [tabVisibility, setTabVisibility] = useState<TabVisibility>(loadTabVisibility);
-  // "pending" = checking, "initializing" = auto-creating MVs, true = wizard, false = dashboard
+  // "pending" = checking server, "initializing" = auto-creating MVs, true = wizard, false = dashboard
+  // Always start "pending" so the server is consulted on every load — localStorage alone is not
+  // sufficient because the schema/data may have been deleted since the last setup completion.
   const [showSetupWizard, setShowSetupWizard] = useState<boolean | "pending" | "initializing">(
-    new URLSearchParams(window.location.search).get("setup") === "true"
-      ? true
-      : localStorage.getItem("coc-setup-complete") === "true" ? false : "pending"
+    new URLSearchParams(window.location.search).get("setup") === "true" ? true : "pending"
   );
   const rqClient = useQueryClient();
 
