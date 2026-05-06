@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, type UseMutationResult } from "@tanstack/react-query";
 import type { AppSettings } from "../SettingsDialog";
 
@@ -50,6 +50,11 @@ export function SettingsConfig({
 }: SettingsConfigProps) {
   const [mvRefreshing, setMvRefreshing] = useState(false);
   const [lookbackDays, setLookbackDays] = useState(730);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => { if (pollIntervalRef.current) clearInterval(pollIntervalRef.current); };
+  }, []);
 
   // Catalog/schema location override
   const { data: catalogInfo = null, isLoading: catalogLoading, refetch: refetchCatalog } = useQuery<{
@@ -69,6 +74,8 @@ export function SettingsConfig({
     locked_to_sp: boolean;
     has_sql_scope: boolean | null;
     lakebase_active: boolean;
+    sp_display_name?: string;
+    sp_client_id?: string;
   } | null>({
     queryKey: ["settings-auth-status"],
     queryFn: () => fetch("/api/settings/auth-status").then(r => r.json()).catch(() => null),
@@ -139,6 +146,7 @@ export function SettingsConfig({
       min_date: string | null;
       max_date: string | null;
       days_behind: number | null;
+      owner?: string | null;
       error?: string;
     }>;
   } | null>({
@@ -148,13 +156,25 @@ export function SettingsConfig({
   });
 
   async function handleMvRefresh() {
+    if (mvRefreshing) return;
+    const prevRefreshTime = tablesStatus?.refresh_status?.last_refresh_utc ?? null;
     setMvRefreshing(true);
     try {
       await fetch(`/api/settings/refresh-mvs?lookback_days=${lookbackDays}`, { method: "POST" });
-      await refetchTables();
-    } finally {
-      setMvRefreshing(false);
+    } catch {
+      // fire-and-forget — server runs refresh in background
     }
+    const deadline = Date.now() + 10 * 60 * 1000;
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    pollIntervalRef.current = setInterval(async () => {
+      const result = await refetchTables();
+      const newTime = result.data?.refresh_status?.last_refresh_utc;
+      if ((newTime && newTime !== prevRefreshTime) || Date.now() > deadline) {
+        clearInterval(pollIntervalRef.current!);
+        pollIntervalRef.current = null;
+        setMvRefreshing(false);
+      }
+    }, 30_000);
   }
   const [genieCreating, setGenieCreating] = useState(false);
   const [genieCreateStatus, setGenieCreateStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -749,24 +769,64 @@ export function SettingsConfig({
               </div>
             )}
 
+            {/* Rebuilding banner */}
+            {mvRefreshing && (
+              <div className="mb-3 flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800">
+                <svg className="h-3.5 w-3.5 animate-spin shrink-0 text-[#FF3621]" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                </svg>
+                Rebuilding in background… The tables below will update automatically when complete.
+              </div>
+            )}
+
             {/* Table list — Delta mode only */}
             {!authStatus?.lakebase_active && (tablesLoading ? (
               <div className="py-3 text-center text-xs text-gray-500">Checking tables...</div>
             ) : tablesStatus?.tables?.length ? (
-              <div className="rounded-lg border border-gray-200 overflow-hidden">
+              <div className={`rounded-lg border border-gray-200 overflow-hidden transition-opacity duration-300 ${mvRefreshing ? "opacity-50" : ""}`}>
                 <table className="min-w-full divide-y divide-gray-100 text-xs">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">Table</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">Type</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-500">Rows</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-500">History</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-500">Latest date</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-500">Freshness</th>
+                      {[
+                        { label: "Table", tip: "Name of the materialized view or app table stored in your catalog", align: "left" },
+                        { label: "Type", tip: "Whether this is a materialized view (rebuilt from system tables) or a plain app config table", align: "left" },
+                        { label: "Owner", tip: "The Unity Catalog owner of this table — shown in amber if it differs from the current app identity, which may prevent rebuilds", align: "left" },
+                        { label: "Rows", tip: "Number of rows currently in the table", align: "right" },
+                        { label: "History", tip: "Span of data in the table — the time window between the oldest and newest record", align: "right" },
+                        { label: "Retention limit", tip: "Maximum data depth available from the source Databricks system table — data older than this cannot be captured regardless of rebuild window", align: "right" },
+                        { label: "Latest date", tip: "The date of the most recent record in the table — data after this date is not yet reflected", align: "right" },
+                        { label: "Freshness", tip: "How far behind today the latest date is — 'Today' means the table is current; '29d behind' means the newest record is 29 days old and the table needs a rebuild", align: "right" },
+                      ].map(({ label, tip, align }) => (
+                        <th key={label} className={`px-3 py-2 text-${align} font-medium text-gray-500`}>
+                          <span className="inline-flex items-center gap-1">
+                            {label}
+                            <span className="relative group">
+                              <svg className="h-3 w-3 text-gray-400 cursor-help flex-shrink-0" viewBox="0 0 16 16" fill="currentColor">
+                                <path fillRule="evenodd" d="M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z" clipRule="evenodd" />
+                              </svg>
+                              <span className={`pointer-events-none invisible absolute ${align === "right" ? "right-0" : "left-0"} top-full z-[9999] mt-1.5 w-56 rounded-lg bg-gray-900 px-2.5 py-2 text-[11px] leading-snug text-white opacity-0 shadow-xl transition-all group-hover:visible group-hover:opacity-100`}>
+                                {tip}
+                              </span>
+                            </span>
+                          </span>
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white">
-                    {tablesStatus.tables.map((t) => {
+                    {(() => {
+                      // Source system table determines effective retention limit.
+                      // billing.usage retains ~3yr; query.history retains ~1yr.
+                      const RETENTION: Record<string, string> = {
+                        daily_usage_summary: "~3yr (billing.usage)",
+                        daily_product_breakdown: "~3yr (billing.usage)",
+                        daily_workspace_breakdown: "~3yr (billing.usage)",
+                        sql_tool_attribution: "~13mo (query.history)",
+                        daily_query_stats: "~13mo (query.history)",
+                        dbsql_cost_per_query: "~13mo (query.history)",
+                      };
+                    return tablesStatus.tables.map((t) => {
                       const stale = t.days_behind != null && t.days_behind > 1;
                       const missing = t.exists === false && !t.optional;
                       const notConfigured = t.exists === false && t.optional;
@@ -799,6 +859,23 @@ export function SettingsConfig({
                               </span>
                             ) : "—"}
                           </td>
+                          <td className="px-3 py-2 text-[11px]">
+                            {t.owner ? (() => {
+                              if (t.owner.toLowerCase() === "unknown") {
+                                return <span className="italic text-gray-400" title="Owner could not be resolved by Unity Catalog">unknown</span>;
+                              }
+                              const currentIdentity = authStatus?.sp_display_name || authStatus?.sp_client_id;
+                              const mismatch = !!(currentIdentity && !t.owner.includes(currentIdentity) && !currentIdentity.includes(t.owner));
+                              return (
+                                <span
+                                  className={mismatch ? "text-amber-600 font-medium" : "text-gray-400"}
+                                  title={mismatch ? `Owned by a different principal than the current app identity (${currentIdentity}). Rebuild may require explicit permissions.` : t.owner}
+                                >
+                                  {t.owner.length > 28 ? t.owner.slice(0, 28) + "…" : t.owner}
+                                </span>
+                              );
+                            })() : <span className="text-gray-300">—</span>}
+                          </td>
                           <td className="px-3 py-2 text-right text-gray-500 tabular-nums">
                             {t.row_count != null ? t.row_count.toLocaleString() : "—"}
                           </td>
@@ -813,6 +890,9 @@ export function SettingsConfig({
                               if (years > 0) return `${years}yr`;
                               return `${months}mo`;
                             })() : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-400 text-[11px]">
+                            {RETENTION[t.name] ?? "—"}
                           </td>
                           <td className="px-3 py-2 text-right font-mono text-gray-500">
                             {t.max_date ? t.max_date.slice(0, 10) : "—"}
@@ -832,7 +912,7 @@ export function SettingsConfig({
                           </td>
                         </tr>
                       );
-                    })}
+                    })})()}
                   </tbody>
                 </table>
               </div>

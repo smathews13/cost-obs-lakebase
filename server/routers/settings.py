@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -653,25 +653,16 @@ async def reset_catalog_settings():
 
 
 @router.post("/refresh-mvs")
-async def trigger_mv_refresh(request: Request, lookback_days: int = 730):
-    """Trigger an immediate MV rebuild with an optional lookback window.
+async def trigger_mv_refresh(request: Request, background_tasks: BackgroundTasks, lookback_days: int = 180):
+    """Kick off an MV rebuild in the background and return immediately.
 
     lookback_days: how many days of history to include (default 730 = 2 years).
     """
-    import asyncio
     from server.app import _run_mv_refresh
 
     user_token = request.headers.get("x-forwarded-access-token") or None
-    loop = asyncio.get_event_loop()
-    try:
-        result = await loop.run_in_executor(None, lambda: _run_mv_refresh(user_token=user_token, lookback_days=lookback_days))
-        failed = {k: v for k, v in result.items() if isinstance(v, str) and v.startswith("error:")}
-        if failed:
-            return {"status": "partial_error", "lookback_days": lookback_days, "result": result,
-                    "errors": failed, "message": f"{len(failed)} table(s) failed to refresh"}
-        return {"status": "ok", "lookback_days": lookback_days, "result": result}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    background_tasks.add_task(_run_mv_refresh, user_token=user_token, lookback_days=lookback_days)
+    return {"status": "queued", "lookback_days": lookback_days}
 
 
 @router.get("/auth-status")

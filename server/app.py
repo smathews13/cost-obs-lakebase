@@ -509,6 +509,14 @@ def _run_mv_refresh(user_token: str | None = None, lookback_days: int = 730) -> 
             logger.error(f"MV refresh: {len(failed)} table(s) failed — {log_data['error']}")
         else:
             logger.info(f"MV refresh complete in {duration}s")
+        # Invalidate caches so next request hits fresh MV data immediately
+        try:
+            from server.routers.billing import _mv_cache
+            _mv_cache["available"] = None
+            from server.db import clear_query_cache
+            clear_query_cache()
+        except Exception as cache_exc:
+            logger.warning(f"Cache invalidation after MV refresh failed: {cache_exc}")
 
         # Populate Lakebase postgres from Delta MVs (non-fatal if unavailable)
         try:
