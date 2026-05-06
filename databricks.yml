@@ -1,6 +1,16 @@
 bundle:
   name: cost-obs-lakebase
 
+variables:
+  warehouse_id:
+    description: "Serverless SQL Warehouse ID for cost observability queries (required)"
+  catalog:
+    description: "Unity Catalog catalog for materialized views"
+    default: main
+  schema:
+    description: "Unity Catalog schema for materialized views"
+    default: cost_obs
+
 targets:
   prod:
     mode: production
@@ -42,6 +52,11 @@ resources:
           postgres:
             database: ${resources.postgres_branches.cost_obs_lb_prod_branch.id}
             permission: CAN_CONNECT_AND_CREATE
+        - name: sql-warehouse
+          description: "SQL Warehouse for cost observability queries"
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE
 
       git_repository:
         url: https://github.com/smathews13/cost-obs-lakebase

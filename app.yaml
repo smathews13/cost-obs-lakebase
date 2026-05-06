@@ -1,18 +1,29 @@
 command: ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # =============================================================================
-# Setup: configure in the Databricks Apps UI before deploying
+# Primary deployment: Databricks Asset Bundle (recommended)
+# =============================================================================
+#
+#   databricks bundle deploy -t prod \
+#     --var="warehouse_id=<your-warehouse-id>"
+#
+# The bundle (databricks.yml) provisions the Lakebase Autoscaling instance,
+# creates the postgres project/branch/endpoint, and deploys this app from
+# https://github.com/smathews13/cost-obs-lakebase (branch: main).
+# All resource bindings (Lakebase + SQL Warehouse) are declared in databricks.yml.
+# After bundle deploy, start the app with:
+#
+#   databricks bundle run cost_obs_app -t prod
+#
+# =============================================================================
+# Manual / UI deployment (fallback — no bundle)
 # =============================================================================
 #
 # 1. App resources → + Add resource → SQL warehouse
-#    Pick your existing Serverless Pro warehouse, set permission to "Can use",
-#    leave the resource key as "sql-warehouse".
-#    The app reads DATABRICKS_WAREHOUSE_ID (injected automatically) to connect.
-#
-# 2. User authorization → + Add scope → sql   (optional but recommended)
-#    Allows the app to run queries as the logged-in user rather than the SP.
-#    Workspace admins get system table access automatically — no GRANT needed.
-#    Users will see a one-time consent prompt on first open.
+#    Key: sql-warehouse, Permission: Can use
+# 2. App resources → + Add resource → Lakebase database
+#    Key: lakebase-db, Permission: CAN_CONNECT_AND_CREATE
+# 3. User authorization → + Add scope → sql (optional but recommended)
 #
 # =============================================================================
 
