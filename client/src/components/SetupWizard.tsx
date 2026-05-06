@@ -105,8 +105,8 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
       setError(null);
       try {
         const [configRes, cloudRes] = await Promise.all([
-          fetch("/api/settings/config"),
-          fetch("/api/settings/cloud-provider"),
+          fetch("/api/settings/config", { signal: AbortSignal.timeout(5000) }),
+          fetch("/api/settings/cloud-provider", { signal: AbortSignal.timeout(5000) }),
         ]);
         if (configRes.ok) setConfig(await configRes.json());
         if (cloudRes.ok) setCloud(await cloudRes.json());
