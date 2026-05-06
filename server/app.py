@@ -595,24 +595,6 @@ def startup_tasks():
     # Step 0c: Grant the active identity access to all required system tables
     setup_system_table_grants()
 
-    # Step 0d: Lakebase provisioning + schema bootstrap — fire-and-forget background thread.
-    # Decoupled from startup_tasks so the LRO wait() on first deploy never blocks app startup.
-    # App starts in OLAP mode; badge flips to OLTP once this thread sets PGHOST.
-    def _lakebase_background():
-        try:
-            from db.provision_lakebase import provision as _lb_provision
-            if _lb_provision():
-                from db.bootstrap_lakebase_schema import bootstrap as _lb_bootstrap
-                logger.info("Bootstrapping Lakebase schema...")
-                _lb_bootstrap()
-                logger.info("Lakebase schema bootstrap complete")
-        except Exception as e:
-            logger.warning(f"Lakebase background init failed (non-fatal): {e}")
-
-    import threading as _threading
-    _threading.Thread(target=_lakebase_background, daemon=True, name="lakebase-init").start()
-    logger.info("Lakebase provisioning started in background thread")
-
     # Step 1: Create materialized views if needed
     setup_materialized_views()
 
