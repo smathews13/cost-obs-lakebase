@@ -42,16 +42,16 @@ def _make_conninfo() -> str:
     pgsslmode = os.environ.get("PGSSLMODE", "require")
     pguser = os.environ.get("PGUSER") or os.environ.get("DATABRICKS_CLIENT_ID", "")
 
-    lakebase_endpoint = os.environ.get("LAKEBASE_ENDPOINT", "")
-    if lakebase_endpoint:
-        from databricks.sdk import WorkspaceClient
-        cred = WorkspaceClient().postgres.generate_database_credential(endpoint=lakebase_endpoint)
-        password = cred.token
-    else:
-        password = os.environ.get("DATABRICKS_TOKEN", "")
-        if not password:
-            from databricks.sdk import WorkspaceClient
-            password = WorkspaceClient().config.oauth_token().access_token
+    lakebase_endpoint = os.environ.get("LAKEBASE_ENDPOINT")
+    if not lakebase_endpoint:
+        raise RuntimeError(
+            "LAKEBASE_ENDPOINT is not set. "
+            "Set it in app.yaml as: value: projects/<project>/branches/<branch>/endpoints/<endpoint>. "
+            "A Databricks OAuth token is NOT a valid Postgres database credential."
+        )
+    from databricks.sdk import WorkspaceClient
+    cred = WorkspaceClient().postgres.generate_database_credential(endpoint=lakebase_endpoint)
+    password = cred.token
 
     logger.debug("Lakebase conninfo: host=%s db=%s user=%s", pghost, pgdatabase, pguser)
     return (

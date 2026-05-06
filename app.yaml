@@ -57,12 +57,14 @@ env:
   # - name: AZURE_SUBSCRIPTION_ID
   #   value: <subscription-id>
 
-  # Lakebase — injected automatically by the Apps runtime when the lakebase-db
-  # postgres resource (defined in databricks.yml) is bound to the app.
-  # PGHOST / PGDATABASE / PGPORT / PGSSLMODE / PGUSER are injected by the platform;
-  # LAKEBASE_ENDPOINT resolves to the endpoint path used by generate_database_credential.
+  # Lakebase — PGHOST / PGDATABASE / PGPORT / PGSSLMODE / PGUSER are injected
+  # automatically by the Apps runtime from the lakebase-db resource binding.
+  # LAKEBASE_ENDPOINT is hardcoded here as the endpoint path for generate_database_credential().
+  # It is deterministic: projects/{project_id}/branches/{branch_id}/endpoints/{endpoint_id}
+  # matching the postgres_project / postgres_branch / postgres_endpoint resources in databricks.yml.
+  # valueFrom: lakebase-db resolves to the branch path, not the endpoint — do not use valueFrom here.
   - name: LAKEBASE_ENDPOINT
-    valueFrom: lakebase-db
+    value: projects/cost-obs-lakebase/branches/production/endpoints/prod-rw
 
   # AWS / Azure actual cost tables (defaults: billing.aws / billing.azure)
   # - name: AWS_COST_CATALOG

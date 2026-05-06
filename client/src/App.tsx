@@ -188,16 +188,17 @@ function Dashboard() {
     }
   };
 
-  // Auto-launch setup wizard on first deploy if materialized views don't exist yet.
-  // If the server returns "initializing", the server is auto-creating MVs using the
-  // user's OAuth token — show a spinner and poll until ready (no wizard needed).
+  // Auto-launch setup wizard on first deploy if tables/Lakebase aren't ready yet.
+  // Always check server status — localStorage is cleared if setup_required so that
+  // deleting tables/schema on a deployed app re-triggers the wizard.
+  // If the server returns "initializing", show a spinner and poll until ready.
   useEffect(() => {
-    if (localStorage.getItem("coc-setup-complete") === "true") return;
     if (new URLSearchParams(window.location.search).get("setup") === "true") return;
     fetch("/api/setup/status")
       .then((r) => r.json())
       .then((status) => {
         if (status?.status === "setup_required") {
+          localStorage.removeItem("coc-setup-complete");
           setShowSetupWizard(true);
         } else if (status?.status === "initializing") {
           setShowSetupWizard("initializing");

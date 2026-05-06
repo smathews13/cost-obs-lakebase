@@ -85,6 +85,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   const [provisionError, setProvisionError] = useState<string | null>(null);
   const [provisionStage, setProvisionStage] = useState<string>("idle");
   const provisionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const createTablesPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const STEPS: WizardStep[] = storageMode === "oltp"
     ? ["welcome", "storage-mode", "lakebase-provision", "permissions", "complete"]
@@ -93,6 +94,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
   useEffect(() => {
     return () => {
       if (provisionPollRef.current) clearInterval(provisionPollRef.current);
+      if (createTablesPollRef.current) clearInterval(createTablesPollRef.current);
     };
   }, []);
 
@@ -163,6 +165,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
           return;
         }
         if (d.status === "running") {
+          setProvisioning(true);
           setProvisionStage(d.stage || "provisioning");
           attachProvisionPoll();
           return;
@@ -226,18 +229,22 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
         throw new Error(`HTTP ${res.status}: ${body}`);
       }
 
-      const poll = setInterval(async () => {
+      if (createTablesPollRef.current) clearInterval(createTablesPollRef.current);
+      createTablesPollRef.current = setInterval(async () => {
         const status = await pollSetupStatus();
         if (status?.all_tables_exist) {
-          clearInterval(poll);
+          clearInterval(createTablesPollRef.current!);
+          createTablesPollRef.current = null;
           setCreating(false);
           setStep("complete");
         } else if (status?.task?.status === "error" && status.task.error) {
-          clearInterval(poll);
+          clearInterval(createTablesPollRef.current!);
+          createTablesPollRef.current = null;
           setCreating(false);
           setError(`Table creation failed: ${status.task.error}`);
         } else if (status?.task?.status === "error" || (status?.task?.status === "done" && !status.all_tables_exist)) {
-          clearInterval(poll);
+          clearInterval(createTablesPollRef.current!);
+          createTablesPollRef.current = null;
           setCreating(false);
           const detail = status?.task?.error || "unknown error";
           setError(`Table creation failed: ${detail}`);
@@ -245,22 +252,26 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
       }, 2000);
 
       setTimeout(() => {
-        clearInterval(poll);
+        if (!createTablesPollRef.current) return;
+        clearInterval(createTablesPollRef.current);
+        createTablesPollRef.current = null;
         setCreating(false);
         setError("Table creation is taking longer than expected. Check /api/setup/status for progress.");
-      }, 600000);
+      }, 300000);
     } catch (e) {
       setCreating(false);
       setError(`Failed to create tables: ${e}`);
     }
   };
 
-  const goNext = () => {
+  const goNext = async () => {
     const idx = STEPS.indexOf(step);
     if (idx < STEPS.length - 1) {
       const next = STEPS[idx + 1];
+      // For lakebase-provision, start the provision check/task BEFORE advancing
+      // so provisioning state is set before the step renders.
+      if (next === "lakebase-provision") await startProvision();
       setStep(next);
-      if (next === "lakebase-provision") startProvision();
       if (next === "permissions") loadPermissions();
       if (next === "create-tables") pollSetupStatus();
     }
@@ -268,7 +279,18 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
 
   const goBack = () => {
     const idx = STEPS.indexOf(step);
-    if (idx > 0) setStep(STEPS[idx - 1]);
+    if (idx <= 0) return;
+    if (step === "lakebase-provision") {
+      if (provisionPollRef.current) {
+        clearInterval(provisionPollRef.current);
+        provisionPollRef.current = null;
+      }
+      setProvisioning(false);
+      setProvisionDone(false);
+      setProvisionError(null);
+      setProvisionStage("idle");
+    }
+    setStep(STEPS[idx - 1]);
   };
 
   const currentIdx = STEPS.indexOf(step);
@@ -289,7 +311,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
               </svg>
             </button>
           )}
-          <h2 className="text-xl font-bold text-white">Cost Observability & Control Setup</h2>
+          <h2 className="text-xl font-bold text-white">cost-obs setup</h2>
           <p className="mt-1 text-sm text-white/70">Configure your environment to get started</p>
         </div>
 
@@ -437,7 +459,7 @@ export function SetupWizard({ onComplete, onClose }: SetupWizardProps) {
             ) : step === "permissions" ? (
               <button
                 onClick={goNext}
-                disabled={loading || (permissions != null && !permissions.summary.all_required_granted)}
+                disabled={loading || permissions === null || !permissions.summary.all_required_granted}
                 className="btn-brand rounded-lg px-6 py-2 text-sm font-bold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Next

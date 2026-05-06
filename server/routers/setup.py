@@ -172,14 +172,56 @@ def _grant_warehouse_can_use(w, sp_client_id: str) -> None:
 
 @router.get("/status")
 async def get_setup_status() -> dict[str, Any]:
-    """Check the status of materialized views.
+    """Check whether the app's data layer is ready.
 
-    If tables are missing and a user OAuth token is present (git-deploy / first load),
-    automatically kick off table creation in a background thread using the user's
-    token — no wizard interaction required. Returns status='initializing' in that case.
+    OLTP mode (PGHOST set): checks whether Lakebase has been bootstrapped and
+    populated by counting rows in cost_obs.daily_usage_summary. No Delta MVs
+    are ever created in this mode.
+
+    OLAP mode: checks whether Delta materialized views exist in Unity Catalog.
+    If tables are missing and a user OAuth token is present (git-deploy / first
+    load), automatically kicks off table creation in a background thread.
     """
     import asyncio as _asyncio
     catalog, schema = get_catalog_schema()
+
+    # ── OLTP mode: Lakebase is the data store — no Delta MVs needed ──────────
+    if os.environ.get("PGHOST"):
+        try:
+            from server import lakebase as _lb
+            rows = await _asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: _lb.execute_query(
+                    "SELECT COUNT(*) AS cnt FROM cost_obs.daily_usage_summary"
+                ),
+            )
+            has_data = rows and rows[0].get("cnt", 0) > 0
+        except Exception as _lb_err:
+            logger.warning("OLTP status check failed: %s", _lb_err)
+            has_data = False
+
+        if has_data:
+            return {
+                "catalog": catalog,
+                "schema": schema,
+                "tables": {},
+                "all_tables_exist": True,
+                "missing_tables": [],
+                "status": "ready",
+                "task": _create_task_state.copy(),
+            }
+        else:
+            return {
+                "catalog": catalog,
+                "schema": schema,
+                "tables": {},
+                "all_tables_exist": False,
+                "missing_tables": ["lakebase_data"],
+                "status": "setup_required",
+                "task": _create_task_state.copy(),
+            }
+
+    # ── OLAP mode: check Delta materialized views in Unity Catalog ────────────
     # Run the blocking SDK call (tables.list) in a thread executor so it doesn't
     # block the async event loop — the frontend polls this every few seconds.
     loop = _asyncio.get_running_loop()
