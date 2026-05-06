@@ -42,7 +42,7 @@ def provision() -> bool:
             Branch, BranchSpec, Endpoint, EndpointSpec, EndpointType,
             Project, ProjectSpec,
         )
-        from databricks.sdk.service import lro as _lro
+        from databricks.sdk.common import lro as _lro
     except ImportError:
         logger.warning("databricks-sdk not available — cannot auto-provision Lakebase")
         return False
