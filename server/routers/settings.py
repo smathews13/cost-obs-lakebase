@@ -701,7 +701,7 @@ async def get_auth_status_endpoint():
 
 
 @router.get("/lakebase")
-async def get_lakebase_status():
+def get_lakebase_status():
     """Return Lakebase provisioning status, instance info, and live connection test."""
     import os as _os
     pghost = _os.environ.get("PGHOST", "")

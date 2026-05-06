@@ -27,13 +27,17 @@ def is_available() -> bool:
 def _make_conninfo() -> str:
     """Build a fresh conninfo string with a current OAuth token.
 
-    Called by the pool for every new physical connection, so tokens are always
-    fresh and never stored at rest.
+    Called by the pool for every new physical connection so tokens stay fresh.
+    Databricks Apps injects DATABRICKS_TOKEN as a short-lived OAuth bearer token
+    and rotates it automatically — read it fresh from env on each call.
+    Fall back to the SDK oauth_token() flow for non-Apps deployments (M2M).
     """
-    from databricks.sdk import WorkspaceClient
     pghost = os.environ.get("PGHOST", "")
     pgdatabase = os.environ.get("PGDATABASE", "postgres")
-    token = WorkspaceClient().config.oauth_token().access_token
+    token = os.environ.get("DATABRICKS_TOKEN", "")
+    if not token:
+        from databricks.sdk import WorkspaceClient
+        token = WorkspaceClient().config.oauth_token().access_token
     return (
         f"host={pghost} "
         f"dbname={pgdatabase} "
