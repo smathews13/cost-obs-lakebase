@@ -117,11 +117,23 @@ def provision() -> bool:
 
         # ── Endpoint ─────────────────────────────────────────────────────────
         _write_status("endpoint", "running")
+        endpoint = None
         try:
             endpoint = pg.get_endpoint(_endpoint_name())
             logger.info("Lakebase endpoint %s already exists", _ENDPOINT_ID)
         except Exception as e:
-            logger.info("Creating Lakebase endpoint %s … (get failed: %s)", _ENDPOINT_ID, e)
+            logger.info("get_endpoint failed (%s) — checking list before creating", e)
+            # An endpoint with a different ID may already exist (only one RW allowed per branch)
+            try:
+                existing = list(pg.list_endpoints(_branch_name()))
+                if existing:
+                    endpoint = existing[0]
+                    logger.info("Found existing endpoint via list: %s", endpoint.name)
+            except Exception as le:
+                logger.info("list_endpoints also failed: %s", le)
+
+        if endpoint is None:
+            logger.info("No existing endpoint found — creating %s", _ENDPOINT_ID)
             _write_status("endpoint", "creating")
             endpoint = pg.create_endpoint(
                 parent=_branch_name(),
