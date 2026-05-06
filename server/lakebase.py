@@ -63,7 +63,7 @@ def _get_pool():
             open=True,
             reconnect_failed=_on_reconnect_failed,
         )
-        logger.info("Lakebase connection pool opened (host=%s db=%s)", _PGHOST, _PGDATABASE)
+        logger.info("Lakebase connection pool opened (host=%s db=%s)", os.environ.get("PGHOST"), os.environ.get("PGDATABASE", "postgres"))
     return _pool
 
 
