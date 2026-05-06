@@ -282,50 +282,47 @@ def _mask_connection(conn: dict) -> dict:
 @router.get("/config")
 async def get_app_config():
     """Return current app configuration: warehouse, identity, and storage location."""
+    import asyncio as _asyncio
     from server.db import get_catalog_schema, get_workspace_client
 
-    result: dict[str, Any] = {
-        "warehouse": None,
-        "identity": None,
-        "storage_location": None,
-    }
-
-    # SQL Warehouse info
     http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
     warehouse_id = http_path.split("/")[-1] if http_path else None
-    if warehouse_id:
+    loop = _asyncio.get_running_loop()
+
+    def _fetch_warehouse():
+        if not warehouse_id:
+            return None
         try:
-            w = get_workspace_client()
-            wh = w.warehouses.get(warehouse_id)
-            result["warehouse"] = {
-                "id": wh.id,
-                "name": wh.name,
-                "size": wh.cluster_size,
-                "state": str(wh.state.value) if wh.state else "UNKNOWN",
-            }
+            wh = get_workspace_client().warehouses.get(warehouse_id)
+            return {"id": wh.id, "name": wh.name, "size": wh.cluster_size,
+                    "state": str(wh.state.value) if wh.state else "UNKNOWN"}
         except Exception as e:
-            logger.warning(f"Could not fetch warehouse details: {e}")
-            result["warehouse"] = {"id": warehouse_id, "name": None, "size": None, "state": "UNKNOWN"}
+            logger.warning("Could not fetch warehouse details: %s", e)
+            return {"id": warehouse_id, "name": None, "size": None, "state": "UNKNOWN"}
 
-    # Service principal / current identity
-    try:
-        w = get_workspace_client()
-        me = w.current_user.me()
-        result["identity"] = {
-            "display_name": me.display_name,
-            "user_name": me.user_name,
-        }
-    except Exception as e:
-        logger.warning(f"Could not fetch current identity: {e}")
+    def _fetch_identity():
+        try:
+            me = get_workspace_client().current_user.me()
+            return {"display_name": me.display_name, "user_name": me.user_name}
+        except Exception as e:
+            logger.warning("Could not fetch current identity: %s", e)
+            return None
 
-    # Storage location (catalog.schema)
-    try:
-        catalog, schema = get_catalog_schema()
-        result["storage_location"] = {"catalog": catalog, "schema": schema}
-    except Exception as e:
-        logger.warning(f"Could not fetch catalog/schema: {e}")
+    def _fetch_catalog():
+        try:
+            catalog, schema = get_catalog_schema()
+            return {"catalog": catalog, "schema": schema}
+        except Exception as e:
+            logger.warning("Could not fetch catalog/schema: %s", e)
+            return None
 
-    return result
+    warehouse, identity, storage = await _asyncio.gather(
+        loop.run_in_executor(None, _fetch_warehouse),
+        loop.run_in_executor(None, _fetch_identity),
+        loop.run_in_executor(None, _fetch_catalog),
+    )
+
+    return {"warehouse": warehouse, "identity": identity, "storage_location": storage}
 
 
 @router.get("/tables")
@@ -957,27 +954,14 @@ async def switch_warehouse(body: WarehouseSwitch):
 
 @router.get("/cloud-provider")
 async def get_cloud_provider():
-    """Detect the base cloud provider from the Databricks workspace host URL."""
-    from server.db import get_workspace_client
-
-    host = os.getenv("DATABRICKS_HOST", "")
-    # Try getting host from workspace client if env var is empty
-    if not host:
-        try:
-            w = get_workspace_client()
-            host = w.config.host or ""
-        except Exception:
-            pass
-
-    host = host.lower()
+    """Detect the cloud provider from the workspace host URL."""
+    host = os.getenv("DATABRICKS_HOST", "").lower()
     if ".azuredatabricks.net" in host or "adb-" in host:
         provider = "azure"
     elif ".gcp.databricks.com" in host:
         provider = "gcp"
     else:
-        # Default to AWS (.cloud.databricks.com and others)
         provider = "aws"
-
     return {"provider": provider, "host": host}
 
 
