@@ -595,6 +595,17 @@ def startup_tasks():
     # Step 0c: Grant the active identity access to all required system tables
     setup_system_table_grants()
 
+    # Step 0d: Bootstrap Lakebase schema (idempotent — safe on every start)
+    try:
+        from server import lakebase as _lb
+        if _lb.is_available():
+            logger.info("Bootstrapping Lakebase schema...")
+            from db.bootstrap_lakebase_schema import bootstrap as _lb_bootstrap
+            _lb_bootstrap()
+            logger.info("Lakebase schema bootstrap complete")
+    except Exception as e:
+        logger.warning(f"Lakebase schema bootstrap failed (non-fatal): {e}")
+
     # Step 1: Create materialized views if needed
     setup_materialized_views()
 

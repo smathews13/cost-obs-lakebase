@@ -51,8 +51,8 @@ def _make_conninfo() -> str:
     if not lakebase_endpoint:
         raise RuntimeError(
             "LAKEBASE_ENDPOINT is not set. "
-            "Set it in app.yaml as: value: projects/<project>/branches/<branch>/endpoints/<endpoint>. "
-            "A Databricks OAuth token is NOT a valid Postgres database credential."
+            "Ensure the lakebase-db resource is bound to the app and app.yaml declares "
+            "'valueFrom: lakebase-db' for LAKEBASE_ENDPOINT."
         )
     from databricks.sdk import WorkspaceClient
     cred = WorkspaceClient().postgres.generate_database_credential(endpoint=lakebase_endpoint)
