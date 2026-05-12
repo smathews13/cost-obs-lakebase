@@ -64,6 +64,46 @@ Deploy directly from this repository using Databricks Apps' built-in Git integra
 
 Or click the **Deploy to Databricks** button at the top of this README.
 
+### Lakebase Setup (Recommended)
+
+Lakebase stores pre-aggregated billing data in a Databricks-managed PostgreSQL database so dashboard queries return in milliseconds instead of hitting the SQL warehouse on every page load. The app falls back to Delta materialized views if Lakebase is not configured, but Lakebase is recommended for production deployments.
+
+#### Step 1 — Create a Lakebase instance
+
+In your Databricks workspace, go to **Lakebase → Create database** and configure:
+
+| Setting | Value |
+|---|---|
+| **Type** | Autoscaling *(not Provisioned — deprecated)* |
+| **PostgreSQL version** | 17 |
+| **Endpoint type** | Read-Write |
+| **Min compute units** | 1 CU |
+| **Max compute units** | 4 CU |
+
+The project, branch, and endpoint names can be anything — they are not referenced by the app.
+
+#### Step 2 — Bind the resource to the app
+
+In the Apps UI, open your app → **Configure → Add resource** and add:
+
+| Field | Value |
+|---|---|
+| **Resource type** | Lakebase database |
+| **Resource key** | `lakebase-db` *(must match exactly)* |
+| **Permission** | `Can Connect and Create` |
+
+The permission must be `Can Connect and Create` — the app creates the `cost_obs` schema and all tables on first start. `Can Connect` alone will cause the startup bootstrap to fail.
+
+#### What happens automatically on first start
+
+Once the resource is bound, the Apps runtime injects `PGHOST`, `PGDATABASE`, `PGPORT`, `PGSSLMODE`, and `PGUSER` into the app environment. `LAKEBASE_ENDPOINT` is resolved automatically via the resource binding. No environment variables need to be set manually.
+
+On startup the app:
+
+1. Creates the `cost_obs` schema and all tables (idempotent — safe on every restart)
+2. Populates tables from your `system.*` billing data via the SQL warehouse
+3. Schedules a daily 2 AM UTC refresh to keep data current
+
 ### Environment Variables
 
 **No environment variables are required to deploy.** Databricks Apps injects OAuth credentials and the workspace host automatically.
@@ -80,7 +120,7 @@ Or click the **Deploy to Databricks** button at the top of this README.
 | `GENIE_SPACE_ID` | — | Genie Space ID for AI cost chat |
 | `AZURE_SUBSCRIPTION_ID` | — | Azure subscription ID (shown in account banner on Azure) |
 | `SMTP_HOST` / `SMTP_*` | — | Email alert configuration |
-| `ENDPOINT_NAME` + `PGHOST` | — | Lakebase connection (falls back to Delta tables if not set) |
+| `LAKEBASE_ENDPOINT` | Injected via resource binding | Lakebase endpoint path for OAuth token generation — set automatically when the `lakebase-db` resource is bound; falls back to Delta tables if not set |
 | `AWS_COST_CATALOG` / `AWS_COST_SCHEMA` | `billing` / `aws` | AWS CUR actual cost tables |
 | `AZURE_COST_CATALOG` / `AZURE_COST_SCHEMA` | `billing` / `azure` | Azure cost export tables |
 | `DATABRICKS_TOKEN` | — | Only needed for **local development** — the setup wizard can generate one for you |
@@ -292,10 +332,9 @@ This system table is a private preview. Contact your Databricks account team to 
                       └────────────────────────────────────┘
                                         │
                       ┌─────────────────▼──────────────────┐
-                      │  Lakebase (optional, PostgreSQL 16) │
-                      │  App state: alerts, permissions,    │
-                      │  settings, user preferences         │
-                      │  Falls back to Delta tables if not  │
+                      │  Lakebase (optional, PostgreSQL 17) │
+                      │  Pre-aggregated billing cache;      │
+                      │  falls back to Delta tables if not  │
                       │  configured                         │
                       └────────────────────────────────────┘
 ```
