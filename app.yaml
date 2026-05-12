@@ -32,6 +32,10 @@ resources:
     description: SQL Warehouse for cost observability queries
     sql_warehouse:
       permission: CAN_USE
+  - name: lakebase-db
+    description: Lakebase RW endpoint for materialized query results
+    postgres:
+      permission: CAN_CONNECT_AND_CREATE
 
 env:
   # Injected automatically by Databricks Apps from the sql-warehouse resource above.
@@ -59,12 +63,10 @@ env:
 
   # Lakebase — PGHOST / PGDATABASE / PGPORT / PGSSLMODE / PGUSER are injected
   # automatically by the Apps runtime from the lakebase-db resource binding.
-  # LAKEBASE_ENDPOINT is hardcoded here as the endpoint path for generate_database_credential().
-  # It is deterministic: projects/{project_id}/branches/{branch_id}/endpoints/{endpoint_id}
-  # matching the postgres_project / postgres_branch / postgres_endpoint resources in databricks.yml.
-  # valueFrom: lakebase-db resolves to the branch path, not the endpoint — do not use valueFrom here.
+  # LAKEBASE_ENDPOINT resolves to the endpoint path via valueFrom so
+  # generate_database_credential(endpoint=...) always gets the correct bound endpoint.
   - name: LAKEBASE_ENDPOINT
-    value: projects/cost-obs-lakebase/branches/production/endpoints/prod-rw
+    valueFrom: lakebase-db
 
   # AWS / Azure actual cost tables (defaults: billing.aws / billing.azure)
   # - name: AWS_COST_CATALOG

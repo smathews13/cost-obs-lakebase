@@ -12,6 +12,35 @@ variables:
     default: cost_obs
 
 targets:
+  dev:
+    mode: development
+    resources:
+      postgres_branches:
+        cost_obs_lb_dev_branch:
+          parent: ${resources.postgres_projects.cost_obs_lb_project.id}
+          branch_id: dev
+      postgres_endpoints:
+        cost_obs_lb_dev_rw:
+          parent: ${resources.postgres_branches.cost_obs_lb_dev_branch.id}
+          endpoint_id: dev-rw
+          endpoint_type: ENDPOINT_TYPE_READ_WRITE
+          autoscaling_limit_min_cu: 1
+          autoscaling_limit_max_cu: 2
+      apps:
+        cost_obs_app:
+          name: cost-obs-dev
+          resources:
+            - name: lakebase-db
+              description: "Lakebase RW endpoint for dev"
+              postgres:
+                database: ${resources.postgres_endpoints.cost_obs_lb_dev_rw.id}
+                permission: CAN_CONNECT_AND_CREATE
+            - name: sql-warehouse
+              description: "SQL Warehouse for cost observability queries"
+              sql_warehouse:
+                id: ${var.warehouse_id}
+                permission: CAN_USE
+
   prod:
     mode: production
 
@@ -50,7 +79,7 @@ resources:
         - name: lakebase-db
           description: "Lakebase RW endpoint for materialized query results"
           postgres:
-            database: ${resources.postgres_branches.cost_obs_lb_prod_branch.id}
+            database: ${resources.postgres_endpoints.cost_obs_lb_prod_rw.id}
             permission: CAN_CONNECT_AND_CREATE
         - name: sql-warehouse
           description: "SQL Warehouse for cost observability queries"
